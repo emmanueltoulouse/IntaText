@@ -1,0 +1,10 @@
+{
+    "recommendations": [
+        "prince781.vala",
+        "mesonbuild.mesonbuild",
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "eamodio.gitlens",
+        "editorconfig.editorconfig"
+    ]
+}

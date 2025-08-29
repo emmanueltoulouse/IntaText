@@ -1,0 +1,103 @@
+{
+    "git.ignoreLimitWarning": true,
+    "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
+    "files.associations": {
+        "*.vala": "vala",
+        "*.vapi": "vala",
+        "*.gresource.xml": "xml",
+        "*.ui": "xml",
+        "*.gschema.xml": "xml"
+    },
+    "vala.compiler": "/usr/bin/valac",
+    "vala.languageServer.enable": true,
+    "vala.packagePath": [
+        "/usr/lib/x86_64-linux-gnu/pkgconfig",
+        "/usr/share/pkgconfig"
+    ],
+    "[vala]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "editor.detectIndentation": false,
+        "editor.rulers": [100],
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit",
+            "source.fixAll": "explicit"
+        },
+        "editor.defaultFormatter": "ajkhoury.uncrustify-format"
+    },
+    "files.trimTrailingWhitespace": true,
+    "editor.formatOnSave": true,
+    "uncrustify.configPath": "${workspaceFolder}/.uncrustify.cfg",
+    "uncrustify.language": "C",
+    "uncrustify.useEditorConfig": false,
+    "files.exclude": {
+        "**/.git": true,
+        "**/build": false,
+        "**/*.c": true,
+        "**/*.o": true,
+        "**/*.lo": true,
+        "**/*.la": true,
+        "**/.deps": true,
+        "**/.libs": true
+    },
+    "search.exclude": {
+        "**/build/**": true,
+        "**/*.c": true
+    },
+    "C_Cpp.default.compileCommands": "/home/emmanuel/Bureau/Projects/IntaText/build/compile_commands.json",
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/.git/**": true
+    },
+    "editor.rulers": [100],
+    "editor.insertSpaces": true,
+    "editor.tabSize": 4,
+    "files.insertFinalNewline": true,
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/**",
+        "/usr/include/glib-2.0",
+        "/usr/include/gtk-4.0",
+        "/usr/include/libadwaita-1",
+        "/usr/lib/x86_64-linux-gnu/glib-2.0/include"
+    ],
+    "mesonbuild.configureOnOpen": true,
+    "mesonbuild.buildFolder": "build",
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+        "*.vala": "${capture}.c",
+        "meson.build": "meson_options.txt"
+    },
+    "workbench.colorCustomizations": {
+        "editorError.foreground": "#ff5555",
+        "editorWarning.foreground": "#ffcc00",
+        "editorInfo.foreground": "#55aaff"
+    },
+    "editor.minimap.renderCharacters": false,
+    "editor.minimap.maxColumn": 100,
+    "editor.bracketPairColorization.enabled": true,
+    "editor.guides.bracketPairs": true,
+    "editor.formatOnPaste": false,
+    "editor.formatOnType": false,
+    "editor.suggestSelection": "recentlyUsedByPrefix",
+    "editor.wordWrap": "off",
+    "terminal.integrated.scrollback": 10000,
+    "git.enabled": true,
+    "git.autofetch": true,
+    "git.confirmSync": false,
+    "git.enableSmartCommit": true,
+    "git.enableStatusBarSync": true,
+    "git.userEmail": "emmanuel.toulouse-gross@cabinet-eto.com",
+    "git.userName": "Emmanuel Toulouse",
+    "git.defaultCloneDirectory": "/home/emmanuel/Bureau/Projects",
+    "uncrustify.executablePath": "/usr/bin/uncrustify",
+    "problems.showCurrentInStatus": true,
+    "problems.defaultViewMode": "table",
+    "vala.problemsEnabled": true,
+    "vala.server.enabled": true,
+    "vala.compilationArgs": [
+        "--target-glib=auto",
+        "--pkg=gtk4",
+        "--pkg=libadwaita-1"
+    ]
+}
