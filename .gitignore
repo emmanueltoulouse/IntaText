@@ -1,0 +1,39 @@
+# Build directories
+build/
+builddir/
+
+# Generated files
+*.c
+*.h
+*~
+
+# IDE files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+temp/
+*.tmp
+*.bak
+
+# Logs
+*.log
+meson-logs/
+
+# Compiled executables
+IntaText
+com.cabineteto.IntaText
+
+# Configuration files
+config.ini
+*.ini
+
+# Cache directories
+__pycache__/
+.cache/
