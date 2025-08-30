@@ -119,6 +119,80 @@ namespace IntaText {
             }
         }
 
+        // === ÉTAT COURANT ET BASCULE DES FORMATS ===
+        public bool is_bold_active() {
+            if (tag_bold == null) return false;
+            Gtk.TextIter it;
+            buffer.get_iter_at_mark(out it, buffer.get_insert());
+            return it.has_tag(tag_bold);
+        }
+
+        public bool is_italic_active() {
+            if (tag_italic == null) return false;
+            Gtk.TextIter it;
+            buffer.get_iter_at_mark(out it, buffer.get_insert());
+            return it.has_tag(tag_italic);
+        }
+
+        public bool is_underline_active() {
+            if (tag_underline == null) return false;
+            Gtk.TextIter it;
+            buffer.get_iter_at_mark(out it, buffer.get_insert());
+            return it.has_tag(tag_underline);
+        }
+
+        public bool is_strikethrough_active() {
+            if (tag_strikethrough == null) return false;
+            Gtk.TextIter it;
+            buffer.get_iter_at_mark(out it, buffer.get_insert());
+            return it.has_tag(tag_strikethrough);
+        }
+
+        public void toggle_bold() {
+            TextIter start, end;
+            if (!buffer.get_selection_bounds(out start, out end)) return;
+            if (tag_bold == null) tag_bold = buffer.create_tag("bold", "weight", Pango.Weight.BOLD);
+            // Détecter l'état sur le début de sélection
+            bool active = start.has_tag(tag_bold);
+            if (active)
+                buffer.remove_tag(tag_bold, start, end);
+            else
+                buffer.apply_tag(tag_bold, start, end);
+        }
+
+        public void toggle_italic() {
+            TextIter start, end;
+            if (!buffer.get_selection_bounds(out start, out end)) return;
+            if (tag_italic == null) tag_italic = buffer.create_tag("italic", "style", Pango.Style.ITALIC);
+            bool active = start.has_tag(tag_italic);
+            if (active)
+                buffer.remove_tag(tag_italic, start, end);
+            else
+                buffer.apply_tag(tag_italic, start, end);
+        }
+
+        public void toggle_underline() {
+            TextIter start, end;
+            if (!buffer.get_selection_bounds(out start, out end)) return;
+            if (tag_underline == null) tag_underline = buffer.create_tag("underline", "underline", Pango.Underline.SINGLE);
+            bool active = start.has_tag(tag_underline);
+            if (active)
+                buffer.remove_tag(tag_underline, start, end);
+            else
+                buffer.apply_tag(tag_underline, start, end);
+        }
+
+        public void toggle_strikethrough() {
+            TextIter start, end;
+            if (!buffer.get_selection_bounds(out start, out end)) return;
+            if (tag_strikethrough == null) tag_strikethrough = buffer.create_tag("strikethrough", "strikethrough", true);
+            bool active = start.has_tag(tag_strikethrough);
+            if (active)
+                buffer.remove_tag(tag_strikethrough, start, end);
+            else
+                buffer.apply_tag(tag_strikethrough, start, end);
+        }
+
         public void insert_list(bool ordered) {
             var list = new PivotList();
             list.ordered = ordered;

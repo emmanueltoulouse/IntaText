@@ -52,8 +52,8 @@ namespace IntaText {
             var format_bar = new Gtk.Box(Orientation.HORIZONTAL, 6);
             format_bar.add_css_class("toolbar");
 
-            Gtk.Button make_btn(string icon_name, string tooltip) {
-                var btn = new Gtk.Button();
+            Gtk.ToggleButton make_btn(string icon_name, string tooltip) {
+                var btn = new Gtk.ToggleButton();
                 var img = new Gtk.Image.from_icon_name(icon_name);
                 btn.set_child(img);
                 btn.set_tooltip_text(tooltip);
@@ -89,30 +89,25 @@ namespace IntaText {
             scroll.set_hexpand(true);
             wysiwyg_editor = new WysiwygEditor();
             // Connexions boutons => actions d'édition
-            btn_bold.clicked.connect(() => {
-                if (wysiwyg_editor != null) wysiwyg_editor.apply_bold();
-            });
-            btn_italic.clicked.connect(() => {
-                if (wysiwyg_editor != null) wysiwyg_editor.apply_italic();
-            });
-            btn_underline.clicked.connect(() => {
-                if (wysiwyg_editor != null) wysiwyg_editor.apply_format(IntaText.Document.TextFormatting.UNDERLINE);
-            });
-            btn_strike.clicked.connect(() => {
-                if (wysiwyg_editor != null) wysiwyg_editor.apply_format(IntaText.Document.TextFormatting.STRIKETHROUGH);
-            });
+            btn_bold.clicked.connect(() => { if (wysiwyg_editor != null) wysiwyg_editor.toggle_bold(); });
+            btn_italic.clicked.connect(() => { if (wysiwyg_editor != null) wysiwyg_editor.toggle_italic(); });
+            btn_underline.clicked.connect(() => { if (wysiwyg_editor != null) wysiwyg_editor.toggle_underline(); });
+            btn_strike.clicked.connect(() => { if (wysiwyg_editor != null) wysiwyg_editor.toggle_strikethrough(); });
             // Détection des modifications
             var buf = wysiwyg_editor.get_buffer();
             buf.changed.connect(() => {
                 has_unsaved_changes = true;
             });
             // Suivre la position du curseur
-            buf.notify["cursor-position"].connect(() => {
-                emit_cursor_position();
-            });
-            buf.mark_set.connect((iter, mark) => {
-                emit_cursor_position();
-            });
+            void sync_toggle_states() {
+                if (wysiwyg_editor == null) return;
+                btn_bold.active = wysiwyg_editor.is_bold_active();
+                btn_italic.active = wysiwyg_editor.is_italic_active();
+                btn_underline.active = wysiwyg_editor.is_underline_active();
+                btn_strike.active = wysiwyg_editor.is_strikethrough_active();
+            }
+            buf.notify["cursor-position"].connect(() => { emit_cursor_position(); sync_toggle_states(); });
+            buf.mark_set.connect((iter, mark) => { emit_cursor_position(); sync_toggle_states(); });
             scroll.set_child(wysiwyg_editor);
             this.append(scroll);
             // Position initiale
