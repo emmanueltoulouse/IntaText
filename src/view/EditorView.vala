@@ -66,10 +66,15 @@ namespace IntaText {
             var btn_underline = make_btn("format-text-underline-symbolic", _("Souligné"));
             var btn_strike = make_btn("format-text-strikethrough-symbolic", _("Barré"));
 
-            format_bar.append(btn_bold);
-            format_bar.append(btn_italic);
-            format_bar.append(btn_underline);
-            format_bar.append(btn_strike);
+            // Groupe visuel des boutons (coins liés)
+            var format_group = new Gtk.Box(Orientation.HORIZONTAL, 0);
+            format_group.add_css_class("linked");
+            format_group.append(btn_bold);
+            format_group.append(btn_italic);
+            format_group.append(btn_underline);
+            format_group.append(btn_strike);
+
+            format_bar.append(format_group);
 
             this.append(format_bar);
 
