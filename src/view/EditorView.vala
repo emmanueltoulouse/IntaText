@@ -112,6 +112,8 @@ namespace IntaText {
             this.append(scroll);
             // Position initiale
             emit_cursor_position();
+            // Synchroniser l'état des boutons au chargement initial
+            sync_toggle_states();
 
             // Appliquer le style par défaut depuis les préférences
             var cfg = controller.get_config_manager();
