@@ -61,10 +61,10 @@ namespace IntaText {
                 return btn;
             }
 
-            var btn_bold = make_btn("format-text-bold-symbolic", _("Gras"));
-            var btn_italic = make_btn("format-text-italic-symbolic", _("Italique"));
-            var btn_underline = make_btn("format-text-underline-symbolic", _("Souligné"));
-            var btn_strike = make_btn("format-text-strikethrough-symbolic", _("Barré"));
+            var btn_bold = make_btn("format-text-bold-symbolic", _("Mettre en gras"));
+            var btn_italic = make_btn("format-text-italic-symbolic", _("Mettre en italique"));
+            var btn_underline = make_btn("format-text-underline-symbolic", _("Souligner"));
+            var btn_strike = make_btn("format-text-strikethrough-symbolic", _("Barrer"));
 
             // Groupe visuel des boutons (coins liés)
             var format_group = new Gtk.Box(Orientation.HORIZONTAL, 0);
@@ -75,6 +75,11 @@ namespace IntaText {
             format_group.append(btn_strike);
 
             format_bar.append(format_group);
+
+            // Séparateur visuel pour préparer d'autres groupes d'icônes
+            var sep = new Gtk.Separator(Orientation.VERTICAL);
+            sep.add_css_class("spacer");
+            format_bar.append(sep);
 
             this.append(format_bar);
 
