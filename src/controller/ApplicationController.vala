@@ -194,7 +194,7 @@ namespace IntaText {
 
             // S'assurer que toutes les modifications de config sont écrites
             get_config_manager().save();
-            print("ApplicationController: Finalisation terminée, configuration sauvegardée.\n");
+            // trace supprimée
         }
 
         /**
@@ -211,14 +211,14 @@ namespace IntaText {
             // Utiliser la clé standardisée "Display", "use_detached_explorer"
             bool config_value = config_manager.get_boolean("Display", "use_detached_explorer", false);
             use_detached_explorer = config_value;
-            print("DEBUG: Mode explorateur détaché (lu depuis 'Display'): %s\n", use_detached_explorer ? "OUI" : "NON");
+            // trace supprimée
 
             // NE PAS créer la fenêtre principale ici, elle est déjà créée dans Application.vala
             // main_window = new MainWindow(application, this);  <-- SUPPRIMER CETTE LIGNE
 
             // Si le mode détaché est activé, créer la fenêtre d'explorateur séparée
             if (use_detached_explorer) {
-                print("DEBUG: Création de la fenêtre explorateur détachée...\n");
+                // trace supprimée
                 if (explorer_window == null) { // Évite recréation
                      explorer_window = new ExplorerWindow(application as Adw.Application, this);
                      // Ne pas appeler present() ici, laisser restore_window_state décider
@@ -236,17 +236,17 @@ namespace IntaText {
          * Appelée par le bouton de MainWindow.
          */
         public void toggle_explorer_visibility(bool show) {
-            print("Controller: Demande de basculement explorateur -> %s\n", show ? "Afficher" : "Masquer");
+            // trace supprimée
 
             if (use_detached_explorer) {
                 // --- Mode Détaché ---
-                print("Controller: Mode détaché, manipulation de ExplorerWindow uniquement\n");
+                // trace supprimée
 
                 // NE PAS TOUCHER À L'EXPLORATEUR INTÉGRÉ
                 if (explorer_window == null) {
                     // Si la fenêtre n'existe pas (cas initial ou après fermeture), la recréer
                     if (show) {
-                        print("Controller: Recréation ExplorerWindow.\n");
+                        // trace supprimée
                         explorer_window = new ExplorerWindow(application as Adw.Application, this);
                         this.active_explorer_view = explorer_window.get_explorer_view();
                         connect_explorer_signals(); // Reconnecter les signaux à la nouvelle vue
@@ -255,17 +255,17 @@ namespace IntaText {
                 } else {
                     // La fenêtre existe, on l'affiche ou la masque
                     if (show) {
-                        print("Controller: Affichage ExplorerWindow.\n");
+                        // trace supprimée
                         explorer_window.present();
                     } else {
-                        print("Controller: Masquage ExplorerWindow.\n");
+                        // trace supprimée
                         explorer_window.hide(); // Utiliser hide() pour pouvoir la réafficher
                     }
                 }
                 // main_window?.update_explorer_button_state(show);
             } else {
                 // --- Mode Intégré ---
-                print("Controller: Mode intégré, manipulation de l'explorateur intégré uniquement\n");
+                // trace supprimée
                 // Demander à MainWindow de gérer son explorateur interne
                 main_window?.set_integrated_explorer_visible(show);
                 // L'état du bouton est géré directement dans set_integrated_explorer_visible
@@ -288,7 +288,7 @@ namespace IntaText {
                 this.active_explorer_view = main_window?.get_explorer_view();
             }
 
-            print("Controller: Connexion signaux sur active_explorer_view=%p\n", active_explorer_view);
+            // trace supprimée
 
             if (active_explorer_view != null) {
                 // Déconnecter d'abord pour éviter les connexions multiples si appelée plusieurs fois
@@ -300,7 +300,7 @@ namespace IntaText {
 
                 // Connecter aussi directory_changed si nécessaire pour synchroniser
                 active_explorer_view.directory_changed.connect((path) => {
-                     print("Controller: Signal directory_changed reçu: %s\n", path);
+                     // trace supprimée
                      // Mettre à jour le modèle ou d'autres vues si besoin
                      var model = ApplicationControllerExtension.get_explorer_model(this);
                      var current_dir = model.get_current_directory();
@@ -317,14 +317,14 @@ namespace IntaText {
 
         // Méthode dédiée pour le signal file_selected (logique pivot)
         private void on_file_selected_pivot(string path) {
-             print("DEBUG PIVOT: Signal file_selected reçu pour '%s'\n", path);
+             // trace supprimée
              try {
                  var converter_manager = DocumentConverterManager.get_instance();
                  PivotDocument? pivot_document = converter_manager.open_file_as_pivot(path);
                  if (pivot_document != null) {
-                     print("DEBUG PIVOT: PivotDocument créé, contenu de %d caractères\n", pivot_document.content.length);
+                     // trace supprimée
                  } else {
-                     print("DEBUG PIVOT: PivotDocument est NULL\n");
+                     // trace supprimée
                  }
 
                  // Check main_window first, then attempt to get editor_view (temporarily using controller's placeholder)
@@ -389,7 +389,7 @@ namespace IntaText {
                 // Sauvegarder avec la clé standardisée "Display", "use_detached_explorer"
                 get_config_manager().set_boolean("Display", "use_detached_explorer", value);
                 get_config_manager().save();
-                print("ApplicationController: Mode explorateur détaché modifié: %s\n", value.to_string());
+                // trace supprimée
             }
         }
 

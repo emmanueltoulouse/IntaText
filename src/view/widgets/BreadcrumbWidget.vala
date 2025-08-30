@@ -76,14 +76,14 @@ namespace IntaText {
 
             // Ajouter les segments
             var segments = breadcrumb_model.get_segments();
-            print("BreadcrumbWidget: Mise à jour UI avec %d segments\n", segments.size); // Log
+            // trace supprimée
 
             for (int i = 0; i < segments.size; i++) {
                 var segment = segments.get(i);
 
                 // *** SIMPLIFICATION POUR TEST ***
                 // Vérifier l'encodage/contenu du nom
-                print("  Segment %d: Name='%s', Path='%s'\n", i, segment.name, segment.path);
+                // trace supprimée
                 // Créer un bouton simple avec juste le label
                 var button = new Button.with_label(segment.name);
                 button.add_css_class("breadcrumb-button");
@@ -100,11 +100,11 @@ namespace IntaText {
                 // Capturer l'index pour le callback
                 int idx = i;
                 button.clicked.connect(() => {
-                    print("BreadcrumbWidget: Bouton %d ('%s') cliqué (Path: %s)\n", idx, segment.name, segment.path); // Log
+                    // trace supprimée
                     if (breadcrumb_model != null) {
                          breadcrumb_model.navigate_to_segment(idx);
                     } else {
-                         print("Erreur: breadcrumb_model est null dans le callback clicked\n");
+                         // trace supprimée
                     }
                 });
 
@@ -117,7 +117,7 @@ namespace IntaText {
                     breadcrumb_container.append(separator);
                 }
             }
-            print("BreadcrumbWidget: Fin mise à jour UI\n"); // Log
+            // trace supprimée
         }
     }
 }

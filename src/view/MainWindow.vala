@@ -87,7 +87,7 @@ public class MainWindow : Adw.ApplicationWindow {
             top_paned = new Paned(Orientation.HORIZONTAL);
             top_paned.set_wide_handle(true);
             top_paned.set_vexpand(true);
-            print("DEBUG MainWindow: top_paned créé\n");
+            // trace supprimée
 
             var explorer_model = ApplicationControllerExtension.get_explorer_model(controller);
             explorer_view = new ExplorerView(explorer_model);

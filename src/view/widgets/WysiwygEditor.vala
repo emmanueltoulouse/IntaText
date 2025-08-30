@@ -783,7 +783,7 @@ namespace IntaText {
             }
         }
 
-        public void set_style(int size, string family, string color) {
+    public void set_style(int size, string family, string color) {
             if (css_provider == null) {
                 css_provider = new Gtk.CssProvider();
                 Gtk.StyleContext.add_provider_for_display(
@@ -792,13 +792,15 @@ namespace IntaText {
                     Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
                 );
             }
-            var css_string = """
+        // Échapper les quotes simples dans le nom de police et toujours quoter
+        string family_sanitized = family.replace("'", "\\'");
+        var css_string = """
                 textview {
-                    font-family: '%s';
+            font-family: '%s';
                     font-size: %dpx;
                     color: %s;
                 }
-            """.printf(family, size, color);
+        """.printf(family_sanitized, size, color);
             css_provider.load_from_string(css_string);
         }
 

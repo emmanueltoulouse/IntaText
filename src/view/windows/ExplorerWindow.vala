@@ -27,7 +27,7 @@ namespace IntaText {
 
             this.controller = controller;
 
-            print("ExplorerWindow: Début de l'initialisation\n");
+            // trace supprimée
 
             // Initialiser l'interface directement
             setup_ui();
@@ -46,7 +46,7 @@ namespace IntaText {
                 return on_close_request();
             });
 
-            print("ExplorerWindow: Fin de l'initialisation\n");
+            // trace supprimée
 
             // AJOUTER: S'assurer que la fenêtre est visible lors de sa création
             this.show();
@@ -111,10 +111,10 @@ namespace IntaText {
 
             // Vue de l'explorateur
             var explorer_model = ApplicationControllerExtension.get_explorer_model(controller);
-            print("ExplorerWindow: ExplorerModel obtenu: %s\n", explorer_model != null ? "OK" : "NULL");
+            // trace supprimée
 
             explorer_view = new ExplorerView(explorer_model);
-            print("ExplorerWindow: ExplorerView créé: %s\n", explorer_view != null ? "OK" : "NULL");
+            // trace supprimée
 
             // Styliser la vue de l'explorateur
             explorer_view.add_css_class("view");
@@ -408,7 +408,7 @@ namespace IntaText {
          * Gère la demande de fermeture de la fenêtre
          */
         private bool on_close_request() {
-            print("ExplorerWindow: Demande de fermeture reçue.\n");
+            // trace supprimée
             // Masquer la fenêtre au lieu de la détruire
             this.hide();
             // Informer le contrôleur que la fenêtre est maintenant masquée

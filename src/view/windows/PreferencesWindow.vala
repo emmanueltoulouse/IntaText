@@ -406,8 +406,29 @@ namespace IntaText {
 
             // --- Connexion des signaux pour sauvegarde et application immédiate ---
             font_button.notify["font"].connect(() => {
+                // Gtk.FontButton.get_font() peut retourner "FamilyName Size".
+                // On ne conserve que le nom de la famille pour la CSS.
                 string font = font_button.get_font();
-                config.set_string("Editor", "font_family", font);
+                string family_only = font;
+                try {
+                    // Si le dernier token est un entier, on l'enlève
+                    var parts = font.split(" ");
+                    if (parts.length > 1) {
+                        string last = parts[parts.length - 1];
+                        // Vérifie si le dernier token est un nombre
+                        bool is_number = true;
+                        foreach (char c in last.to_utf8()) {
+                            if (!((c >= '0' && c <= '9'))) { is_number = false; break; }
+                        }
+                        if (is_number) {
+                            family_only = string.joinv(" ", parts[0:parts.length - 1]);
+                        }
+                    }
+                } catch (Error e) {
+                    // Fallback: garder tel quel
+                    family_only = font;
+                }
+                config.set_string("Editor", "font_family", family_only);
                 config.save();
                 controller.apply_editor_style_from_preferences();
             });

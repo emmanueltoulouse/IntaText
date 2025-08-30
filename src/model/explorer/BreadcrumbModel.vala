@@ -188,7 +188,7 @@ namespace IntaText {
                          warning("BreadcrumbModel: Chemin absolu calculé vide pour segment '%s' (partie de '%s'). 'current' était '%s'. Original absolu: %s",
                                  segment_name, original_path, current, original_path_was_absolute.to_string());
                     }
-                    print("  -> Création Segment: Name='%s', Path='%s'\n", segment_name, segment_path);
+                    // trace supprimée
                     // *** FIN AJOUT ***
 
 

@@ -95,7 +95,7 @@ namespace IntaText {
                     Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
                 );
 
-                print("Styles CSS chargés\n");
+                // trace supprimée
             } catch (Error e) {
                 warning("Erreur lors du chargement du CSS: %s", e.message);
             }
@@ -140,7 +140,7 @@ namespace IntaText {
             // (y compris ExplorerWindow potentiellement créée dans init) soient prêtes.
             // Utiliser un court délai pour être sûr que tout est dessiné.
             Timeout.add(100, () => {
-                print("Application: Appel de connect_explorer_signals.\n");
+                // trace supprimée
                 controller.connect_explorer_signals();
                 return false; // Exécuter une seule fois
             });

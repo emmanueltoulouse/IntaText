@@ -594,9 +594,7 @@ namespace IntaText {
             this.controller = controller;
             this.tab_model = tab_model;
 
-            print("ExplorerTabView: Création pour %s avec controller %s\n",
-                  tab_model.get_display_name(),
-                  controller != null ? "OK" : "NULL");
+            // trace supprimée
 
             var explorer_model = ApplicationControllerExtension.get_explorer_model(controller);
 
@@ -652,7 +650,7 @@ namespace IntaText {
 
             // S'abonner aux changements de chemin dans le modèle d'onglet
             tab_model.notify["current-path"].connect(() => {
-                print("ExplorerTabView: Chemin changé dans le modèle: %s\n", tab_model.current_path);
+                // trace supprimée
                 load_directory_content();
 
                 // Mettre à jour le fil d'Ariane si actif et visible
@@ -741,7 +739,7 @@ namespace IntaText {
                     if (selection_model != null) {
                         var file_item = selection_model.get_selected_item() as FileItemModel;
                         if (file_item != null) {
-                            print("Double-clic détecté sur: %s\n", file_item.path);
+                            // trace supprimée
                             // Appeler directement on_item_activated
                             on_item_activated(selection_model.get_selected());
                         }
@@ -760,7 +758,7 @@ namespace IntaText {
             list_view.set_visible(true);
             scroll.set_visible(true);
 
-            print("ExplorerTabView: ListView configurée et rendue visible\n");
+            // trace supprimée
 
             // Ne pas ajouter scroll ici, il sera ajouté via content_paned
             // Supprimer cette ligne qui cause l'erreur gtk_box_append
@@ -975,36 +973,35 @@ namespace IntaText {
          * Gère l'activation d'un élément (double-clic ou Entrée)
          */
         private void on_item_activated(uint position) {
-            print("ExplorerTabView: on_item_activated appelé avec position %u\n", position);
+            // trace supprimée
 
             var selection = list_view.get_model() as SingleSelection;
             if (selection == null) {
-                print("ExplorerTabView: Erreur - selection est null\n");
+                // trace supprimée
                 return;
             }
 
             var file_item = selection.get_selected_item() as FileItemModel;
             if (file_item == null) {
-                print("ExplorerTabView: Erreur - file_item est null\n");
+                // trace supprimée
                 return;
             }
 
-            print("ExplorerTabView: Fichier sélectionné: %s (est un dossier: %s)\n",
-                  file_item.path, file_item.is_directory().to_string());
+            // trace supprimée
 
             if (file_item.is_directory()) {
                 // Pour les dossiers, utiliser directement le modèle pour naviguer
                 var explorer_model = ApplicationControllerExtension.get_explorer_model(controller);
                 if (explorer_model != null) {
-                    print("ExplorerTabView: Navigation vers le dossier: %s\n", file_item.path);
+                    // trace supprimée
                     bool result = explorer_model.navigate_to(file_item.path);
-                    print("ExplorerTabView: Résultat de la navigation: %s\n", result.to_string());
+                    // trace supprimée
                 } else {
-                    print("ExplorerTabView: Erreur - explorer_model est null\n");
+                    // trace supprimée
                 }
             } else {
                 // Pour les fichiers, émettre le signal pour l'ouverture
-                print("ExplorerTabView: Émission du signal file_selected pour: %s\n", file_item.path);
+                // trace supprimée
                 file_selected(file_item.path);
             }
         }
@@ -1286,7 +1283,7 @@ namespace IntaText {
          * Configure l'option d'affichage des fichiers cachés en mettant à jour le filtre.
          */
         public void set_show_hidden(bool show_hidden) {
-            print("ExplorerTabView: set_show_hidden appelé avec %s\n", show_hidden.to_string());
+            // trace supprimée
             // Mettre à jour la logique interne du filtre existant
             hidden_filter.set_filter_func((obj) => {
                 var file_item = obj as FileItemModel;
@@ -1521,7 +1518,7 @@ namespace IntaText {
          * Simplifié pour juste utiliser set_visible.
          */
         private void update_breadcrumb_visibility(bool visible) {
-            print("ExplorerTabView: update_breadcrumb_visibility appelé avec %s\n", visible.to_string());
+            // trace supprimée
             breadcrumb_widget.set_visible(visible);
             // Mettre à jour le chemin si on le rend visible
             if (visible) {

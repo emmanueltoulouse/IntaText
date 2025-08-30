@@ -74,6 +74,8 @@ namespace IntaText {
             var cfg = controller.get_config_manager();
             int size = cfg.get_integer("Editor", "font_size", 12);
             string family = cfg.get_string("Editor", "font_family", "Sans");
+            // Si la famille contient une taille (ex: "Sans 12"), ne garder que le nom
+            family = sanitize_font_family(family);
             string color = cfg.get_string("Editor", "font_color", "#222222");
             set_editor_style(size, family, color);
         }
@@ -85,9 +87,12 @@ namespace IntaText {
             // Applique un style simple via CSS
             try {
                 var css = new Gtk.CssProvider();
+                // Utiliser des quotes pour le nom de police (peut contenir des espaces)
+                // et échapper les quotes simples éventuelles.
+                string family_sanitized = family.replace("'", "\\'");
                 css.load_from_string("""
-                    .editor-text { font-family: %s; font-size: %dpt; color: %s; }
-                """.printf(family, size, color));
+                    .editor-text { font-family: '%s'; font-size: %dpt; color: %s; }
+                """.printf(family_sanitized, size, color));
                 wysiwyg_editor.add_css_class("editor-text");
                 Gtk.StyleContext.add_provider_for_display(
                     Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -181,6 +186,22 @@ namespace IntaText {
             // Gtk.TextIter.get_line() est 0-based; get_line_offset() aussi; on convertit en 1-based
             line = iter.get_line() + 1;
             column = iter.get_line_offset() + 1;
+        }
+
+        // Supprime un dernier token numérique (souvent la taille) d'un nom de police
+        private string sanitize_font_family(string input) {
+            if (input == null || input.length == 0) return "Sans";
+            var parts = input.split(" ");
+            if (parts.length <= 1) return input;
+            string last = parts[parts.length - 1];
+            bool numeric = true;
+            foreach (char c in last.to_utf8()) {
+                if (!(c >= '0' && c <= '9')) { numeric = false; break; }
+            }
+            if (numeric) {
+                return string.joinv(" ", parts[0:parts.length - 1]);
+            }
+            return input;
         }
     }
 }

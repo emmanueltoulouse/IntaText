@@ -46,7 +46,7 @@ namespace IntaText {
             // Méthode pour charger la configuration depuis le fichier INI
             try {
                 key_file.load_from_file(config_path, KeyFileFlags.KEEP_COMMENTS);
-                print("Configuration chargée depuis %s\n", config_path);
+                // trace supprimée
             } catch (Error e) {
                 warning("Erreur lors du chargement de la configuration: %s", e.message);
                 config_error.emit(e.message);
@@ -58,7 +58,7 @@ namespace IntaText {
             try {
                 string data = key_file.to_data();
                 FileUtils.set_contents(config_path, data);
-                print("Configuration sauvegardée dans %s\n", config_path);
+                // trace supprimée
                 config_changed.emit();
             } catch (Error e) {
                 warning("Erreur lors de la sauvegarde de la configuration: %s", e.message);
