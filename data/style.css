@@ -19,8 +19,10 @@
 
 /* ===== BARRE D'OUTILS ===== */
 .toolbar {
-    padding: 6px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    background-color: #ececec; /* même fond que la barre de statut */
+    border-bottom: 1px solid #d0d0d0;
+    padding: 4px 10px;
+    min-height: 28px;
 }
 
 /* ===== BARRE DE STATUT ===== */
