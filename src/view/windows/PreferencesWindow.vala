@@ -31,14 +31,8 @@ namespace IntaText {
             // Page Explorateur
             add_page_explorer();
 
-            // Page Communication
-            add_page_communication();
-
             // Page Affichage (NOUVEAU)
             add_page_display();
-
-            // Page IA (NOUVEAU)
-            add_page_ai();
 
             // Page Thèmes
             add_page_theme();
@@ -371,49 +365,6 @@ namespace IntaText {
             this.add(explorer_page);
         }
 
-        private void add_page_communication() {
-            var comm_page = new Adw.PreferencesPage();
-            comm_page.set_title(_("Communication"));
-            comm_page.set_icon_name("mail-message-new-symbolic");
-
-            var chat_group = new Adw.PreferencesGroup();
-            chat_group.set_title(_("Chat IA"));
-
-            var save_history_row = new Adw.ActionRow();
-            save_history_row.set_title(_("Sauvegarder l'historique des conversations"));
-            var save_history_switch = new Gtk.Switch();
-            save_history_switch.set_active(config.get_boolean("Communication", "save_history", true));
-            save_history_switch.set_valign(Gtk.Align.CENTER);
-            save_history_row.add_suffix(save_history_switch);
-            chat_group.add(save_history_row);
-
-            var terminal_group = new Adw.PreferencesGroup();
-            terminal_group.set_title(_("Terminal"));
-
-            var custom_prompt_row = new Adw.ActionRow();
-            custom_prompt_row.set_title(_("Invite personnalisée"));
-            var custom_prompt_switch = new Gtk.Switch();
-            custom_prompt_switch.set_active(config.get_boolean("Terminal", "custom_prompt", false));
-            custom_prompt_switch.set_valign(Gtk.Align.CENTER);
-            custom_prompt_row.add_suffix(custom_prompt_switch);
-            terminal_group.add(custom_prompt_row);
-
-            comm_page.add(chat_group);
-            comm_page.add(terminal_group);
-            add(comm_page);
-
-            // Connecter les signaux
-            save_history_switch.notify["active"].connect(() => {
-                config.set_boolean("Communication", "save_history", save_history_switch.active);
-                config.save();
-            });
-
-            custom_prompt_switch.notify["active"].connect(() => {
-                config.set_boolean("Terminal", "custom_prompt", custom_prompt_switch.active);
-                config.save();
-            });
-        }
-
         private void add_page_display() {
             var display_page = new Adw.PreferencesPage();
             display_page.set_title(_("Affichage"));
@@ -471,114 +422,6 @@ namespace IntaText {
                 config.set_string("Editor", "font_color", color.to_string());
                 config.save();
                 controller.apply_editor_style_from_preferences();
-            });
-        }
-
-        private void add_page_ai() {
-            var ai_page = new Adw.PreferencesPage();
-            ai_page.set_title(_("IA"));
-            ai_page.set_icon_name("preferences-system-symbolic");
-
-            var api_group = new Adw.PreferencesGroup();
-            api_group.set_title(_("Configuration API"));
-
-            var api_key_row = new Adw.PasswordEntryRow();
-            api_key_row.set_title(_("Clé API"));
-            api_key_row.set_text(config.get_string("AI", "api_key", ""));
-            api_group.add(api_key_row);
-
-            var endpoint_row = new Adw.EntryRow();
-            endpoint_row.set_title(_("URL du point de terminaison"));
-            endpoint_row.set_text(config.get_string("AI", "endpoint", "https://api.openai.com/v1"));
-            api_group.add(endpoint_row);
-
-            var model_group = new Adw.PreferencesGroup();
-            model_group.set_title(_("Modèle"));
-
-            var model_list = new Gtk.StringList(null);
-            model_list.append("gpt-3.5-turbo");
-            model_list.append("gpt-4");
-            model_list.append("gpt-4-turbo");
-            model_list.append("claude-3-opus");
-            model_list.append("claude-3-sonnet");
-            model_list.append("gemini-pro");
-            var string_expression = new Gtk.PropertyExpression(typeof(Gtk.StringObject), null, "string");
-            var model_dropdown = new Gtk.DropDown(model_list, string_expression);
-
-            // Sélectionner le modèle actuel
-            string current_model = config.get_string("AI", "model", "gpt-3.5-turbo");
-            for (int i = 0; i < model_list.get_n_items(); i++) {
-                if (model_list.get_string(i) == current_model) {
-                    model_dropdown.set_selected(i);
-                    break;
-                }
-            }
-
-            var model_row = new Adw.ActionRow();
-            model_row.set_title(_("Modèle IA"));
-            model_row.add_suffix(model_dropdown);
-            model_group.add(model_row);
-
-            var behavior_group = new Adw.PreferencesGroup();
-            behavior_group.set_title(_("Comportement"));
-
-            var temperature_row = new Adw.ActionRow();
-            temperature_row.set_title(_("Température"));
-            temperature_row.set_subtitle(_("Valeurs plus basses = réponses plus déterministes"));
-
-            var temperature_scale = new Gtk.Scale.with_range(Gtk.Orientation.HORIZONTAL, 0.0, 2.0, 0.1);
-            temperature_scale.set_value(config.get_double("AI", "temperature", 0.7));
-            temperature_scale.set_draw_value(true);
-            temperature_scale.set_value_pos(Gtk.PositionType.RIGHT);
-            temperature_scale.set_hexpand(true);
-            temperature_scale.set_size_request(200, -1);
-            temperature_row.add_suffix(temperature_scale);
-            behavior_group.add(temperature_row);
-
-            var context_size_row = new Adw.ActionRow();
-            context_size_row.set_title(_("Taille du contexte"));
-            context_size_row.set_subtitle(_("Nombre de messages à garder en contexte"));
-
-            var context_scale = new Gtk.Scale.with_range(Gtk.Orientation.HORIZONTAL, 1, 20, 1);
-            context_scale.set_value(config.get_integer("AI", "context_size", 10));
-            context_scale.set_draw_value(true);
-            context_scale.set_value_pos(Gtk.PositionType.RIGHT);
-            context_scale.set_hexpand(true);
-            context_scale.set_size_request(200, -1);
-            context_size_row.add_suffix(context_scale);
-            behavior_group.add(context_size_row);
-
-            ai_page.add(api_group);
-            ai_page.add(model_group);
-            ai_page.add(behavior_group);
-            add(ai_page);
-
-            // Connecter les signaux
-            api_key_row.changed.connect(() => {
-                config.set_string("AI", "api_key", api_key_row.get_text());
-                config.save();
-            });
-
-            endpoint_row.changed.connect(() => {
-                config.set_string("AI", "endpoint", endpoint_row.get_text());
-                config.save();
-            });
-
-            model_dropdown.notify["selected"].connect(() => {
-                uint selected = model_dropdown.get_selected();
-                string model = model_list.get_string(selected);
-                config.set_string("AI", "model", model);
-                config.save();
-            });
-
-            temperature_scale.value_changed.connect(() => {
-                config.set_double("AI", "temperature", temperature_scale.get_value());
-                config.save();
-            });
-
-            context_scale.value_changed.connect(() => {
-                config.set_integer("AI", "context_size", (int)context_scale.get_value());
-                config.save();
             });
         }
 

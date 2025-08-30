@@ -49,8 +49,6 @@ sources = [
     'src/model/ApplicationModel.vala',
     'src/model/ConfigManager.vala',
     'src/model/EditorModel.vala',
-    'src/model/CommunicationModel.vala',
-    'src/model/ChatMessage.vala',
 
     # Explorateur - Modèles
     'src/model/ExplorerModel.vala',
@@ -83,7 +81,6 @@ sources = [
     'src/view/MainWindow.vala',
     'src/view/ExplorerView.vala',
     'src/view/EditorView.vala',
-    'src/view/CommunicationView.vala',
 
     # Fenêtres pour l'explorateur
     'src/view/windows/ExplorerWindow.vala',
@@ -94,9 +91,6 @@ sources = [
     'src/view/dialogs/TableEditorDialog.vala',
 
     # Widgets
-    'src/view/widgets/ChatBubbleRow.vala',
-    'src/view/widgets/ChatView.vala',
-    'src/view/widgets/TerminalView.vala',
     'src/view/widgets/ComparisonView.vala',
     'src/view/widgets/FilePreviewWidget.vala',
     'src/view/widgets/ErrorInfoBar.vala',
@@ -105,13 +99,7 @@ sources = [
     'src/view/widgets/WysiwygEditor.vala',
 
     # Vues supplémentaires à ajouter
-    'src/CommandView.vala',
     'src/Sidebar.vala',
-    'src/model/ai/AIModelInfo.vala',
-    'src/model/ai/AIModelList.vala',
-    'src/model/ai/AIModelManager.vala',
-    'src/controller/AIModelController.vala',
-    'src/view/windows/AIModelConfigWindow.vala',
 ]
 
 add_project_arguments(['--target-glib=auto'], language: 'vala')

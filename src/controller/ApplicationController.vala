@@ -4,11 +4,7 @@ namespace IntaText {
     public class ApplicationController : Object {
         // Signal for message notification
         public signal void message_received(string message);
-
-        // Signal pour notifier les commandes de terminal
-        public signal void terminal_command_signal(string command, string output);
-
-        private ApplicationModel? model;
+      private ApplicationModel? model;
         private Gtk.Application application;
         private ExplorerWindow? explorer_window = null;
         private MainWindow? main_window = null;
@@ -41,23 +37,6 @@ namespace IntaText {
         }
 
         /**
-         * S'abonne aux commandes du terminal
-         * @param callback Fonction à appeler quand une commande est exécutée
-         */
-        public void subscribe_to_terminal_commands(owned TerminalCommandCallback callback) {
-            terminal_command_signal.connect((cmd, output) => callback(cmd, output));
-        }
-
-        /**
-         * Exécute une commande dans le terminal
-         * @param command La commande à exécuter
-         */
-        public void execute_terminal_command(string command) {
-            // Déléguer au modèle
-            model.communication.execute_terminal_command(command);
-        }
-
-        /**
          * Rafraîchit la vue de l'explorateur
          */
         public void refresh_explorer() {
@@ -80,9 +59,6 @@ namespace IntaText {
 
         // Define the delegate type for message callbacks
         public delegate void MessageCallback(string message);
-
-        // Type de délégué pour les callbacks de commandes terminal
-        public delegate void TerminalCommandCallback(string command, string output);
 
         /**
          * Type de délégué pour les callbacks de changement de l'explorateur
@@ -252,61 +228,7 @@ namespace IntaText {
             // NE PAS présenter la fenêtre principale ici, c'est déjà fait dans Application.vala
             // main_window.present();  <-- SUPPRIMER CETTE LIGNE
 
-            // Configuration de la barre d'outils
-            var toolbar = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 6);
-            toolbar.add_css_class("toolbar");
-            toolbar.add_css_class("view");
-            toolbar.set_margin_top(6);
-            toolbar.set_margin_start(12);
-            toolbar.set_margin_end(12);
-            toolbar.set_margin_bottom(6);
-
-            // Boutons de navigation
-            var back_button = new Gtk.Button.from_icon_name("go-previous-symbolic");
-            back_button.add_css_class("flat");
-            back_button.set_tooltip_text(_("Précédent"));
-            back_button.clicked.connect(() => {
-                model.explorer.go_back();
-            });
-
-            var forward_button = new Gtk.Button.from_icon_name("go-next-symbolic");
-            forward_button.add_css_class("flat");
-            forward_button.set_tooltip_text(_("Suivant"));
-            forward_button.clicked.connect(() => {
-                model.explorer.go_forward();
-            });
-
-            var up_button = new Gtk.Button.from_icon_name("go-up-symbolic");
-            up_button.add_css_class("flat");
-            up_button.set_tooltip_text(_("Dossier parent"));
-            up_button.clicked.connect(() => {
-                model.explorer.navigate_to_parent();
-            });
-
-            // Bouton pour actualiser
-            var refresh_button = new Gtk.Button.from_icon_name("view-refresh-symbolic");
-            refresh_button.add_css_class("flat");
-            refresh_button.set_tooltip_text(_("Actualiser"));
-            refresh_button.clicked.connect(() => {
-                model.explorer.refresh();
-            });
-
-            // Ajouter les boutons à la barre d'outils
-            toolbar.append(back_button);
-            toolbar.append(forward_button);
-            toolbar.append(up_button);
-            toolbar.append(refresh_button);
-
-            // Ajouter la barre d'outils à l'interface
-            if (main_window != null) {
-                // Access the header bar directly if it's accessible
-                var header_bar = main_window.get_header_bar();
-                if (header_bar != null) {
-                    header_bar.pack_start(toolbar);
-                } else {
-                    warning("Could not access header bar in main window");
-                }
-            }
+            // La toolbar de navigation est désormais créée par MainWindow (respect MVC)
         }
 
         /**
@@ -340,8 +262,7 @@ namespace IntaText {
                         explorer_window.hide(); // Utiliser hide() pour pouvoir la réafficher
                     }
                 }
-                // Mettre à jour l'état du bouton dans MainWindow
-                main_window?.update_explorer_button_state(show);
+                // main_window?.update_explorer_button_state(show);
             } else {
                 // --- Mode Intégré ---
                 print("Controller: Mode intégré, manipulation de l'explorateur intégré uniquement\n");
@@ -439,6 +360,23 @@ namespace IntaText {
         // Ajouter cette méthode pour obtenir la fenêtre de l'explorateur détaché
         public ExplorerWindow? get_explorer_window() {
             return explorer_window;
+        }
+
+        // Commandes de navigation exposées pour la vue (MainWindow)
+        public void go_back() {
+            model.explorer.go_back();
+        }
+
+        public void go_forward() {
+            model.explorer.go_forward();
+        }
+
+        public void navigate_to_parent() {
+            model.explorer.navigate_to_parent();
+        }
+
+        public void refresh_explorer_model() {
+            model.explorer.refresh();
         }
 
         /**

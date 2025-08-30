@@ -326,6 +326,11 @@ namespace IntaText {
             factory.setup.connect((setup_item) => {
                 var list_item = setup_item as ListItem;
 
+                if (list_item == null) {
+                    warning("ExplorerView: list_item is null in setup handler");
+                    return;
+                }
+
                 var box = new Box(Orientation.HORIZONTAL, 12);
                 box.set_margin_start(6);
                 box.set_margin_end(6);
@@ -348,6 +353,11 @@ namespace IntaText {
                 var list_item = bind_item as ListItem;
                 var file_item = list_item.get_item() as FileItemModel;
                 var box = list_item.get_child() as Box;
+
+                if (box == null) {
+                    warning("ExplorerView: box is null in bind handler");
+                    return;
+                }
 
                 // Trouver l'icône et le label
                 unowned Image? icon = null;

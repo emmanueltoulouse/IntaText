@@ -23,7 +23,10 @@
             "problemMatcher": [
                 {
                     "owner": "vala",
-                    "fileLocation": ["relative", "${workspaceFolder}"],
+                    "fileLocation": [
+                        "relative",
+                        "${workspaceFolder}"
+                    ],
                     "pattern": [
                         {
                             "regexp": "^(.*):(\\d+)\\.(\\d+)-(\\d+)\\.(\\d+): (error|warning|note): (.*)$",
@@ -123,7 +126,10 @@
             },
             "problemMatcher": {
                 "owner": "vala",
-                "fileLocation": ["relative", "${workspaceFolder}"],
+                "fileLocation": [
+                    "relative",
+                    "${workspaceFolder}"
+                ],
                 "pattern": [
                     {
                         "regexp": "^(.*):(\\d+)\\.(\\d+)-(\\d+)\\.(\\d+): (error|warning|note): (.*)$",
@@ -190,7 +196,10 @@
             },
             "problemMatcher": {
                 "owner": "vala-lint",
-                "fileLocation": ["relative", "${workspaceFolder}"],
+                "fileLocation": [
+                    "relative",
+                    "${workspaceFolder}"
+                ],
                 "pattern": {
                     "regexp": "^AVERTISSEMENT: (.*) dans (.*)$",
                     "message": 1,

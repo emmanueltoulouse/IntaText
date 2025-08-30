@@ -17,16 +17,17 @@ public class MainWindow : Adw.ApplicationWindow {
     private Box main_box;
     private Paned main_paned;
     private Paned top_paned;
-    private Paned editor_comm_paned;
 
     private ExplorerView? explorer_view;
-    private CommunicationView communication_view;
-    private ToggleButton explorer_button;
-    private ToggleButton communication_button;
 
     private Notebook editor_notebook;
     private Gee.List<EditorView> editor_tabs = new Gee.ArrayList<EditorView>();
     private bool use_detached_explorer = false;
+    // Barre de statut
+    private Gtk.Box status_bar;
+    private Gtk.Label status_label;
+    private Gtk.Label cursor_label;
+    private bool show_statusbar_pref = true;
 
     public signal void file_opened(string path);
     public signal void directory_changed(string path);
@@ -62,15 +63,6 @@ public class MainWindow : Adw.ApplicationWindow {
         // HeaderBar
         header_bar = new Adw.HeaderBar();
 
-        // === AJOUT ICI : Bouton TEST à gauche ===
-        var test_button = new Gtk.Button.with_label("TEST");
-        test_button.set_tooltip_text("Bouton de test");
-        test_button.add_css_class("suggested-action"); // Optionnel : style bleu
-        test_button.clicked.connect(() => {
-            // Action de test ici (exemple : afficher une notification)
-            add_toast(new Adw.Toast("Bouton TEST cliqué !"));
-        });
-        header_bar.pack_start(test_button);
 
         // Menu hamburger à droite
         var menu_button = new MenuButton();
@@ -91,13 +83,11 @@ public class MainWindow : Adw.ApplicationWindow {
             top_paned = null;
             editor_notebook = new Notebook();
             main_box.append(editor_notebook);
-            communication_view = new CommunicationView(controller);
-            main_paned.set_end_child(communication_view);
-            editor_comm_paned = main_paned;
         } else {
             top_paned = new Paned(Orientation.HORIZONTAL);
             top_paned.set_wide_handle(true);
             top_paned.set_vexpand(true);
+            print("DEBUG MainWindow: top_paned créé\n");
 
             var explorer_model = ApplicationControllerExtension.get_explorer_model(controller);
             explorer_view = new ExplorerView(explorer_model);
@@ -108,9 +98,6 @@ public class MainWindow : Adw.ApplicationWindow {
 
             main_paned.set_start_child(top_paned);
 
-            communication_view = new CommunicationView(controller);
-            main_paned.set_end_child(communication_view);
-
             main_paned.set_resize_start_child(false);
             main_paned.set_shrink_start_child(false);
             main_paned.set_resize_end_child(false);
@@ -120,11 +107,34 @@ public class MainWindow : Adw.ApplicationWindow {
 
             top_paned.set_position(280);
             main_paned.set_position(500);
-
-            editor_comm_paned = main_paned;
         }
 
-        main_box.append(main_paned);
+        // Mettre à jour la barre de statut lors des changements d'onglet
+        editor_notebook.switch_page.connect((page, page_num) => {
+            update_status_bar();
+        });
+
+    main_box.append(main_paned);
+
+    // Barre de statut en bas
+    status_bar = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    status_bar.add_css_class("toolbar");
+    status_bar.add_css_class("statusbar");
+    status_bar.set_margin_top(0);
+    status_label = new Gtk.Label("");
+    status_label.set_xalign(0.0f);
+    status_label.set_hexpand(true); // pousse le label du curseur à droite
+    status_bar.append(status_label);
+    // Label curseur à droite "Lig :xxxx  Col:xxx"
+    cursor_label = new Gtk.Label("");
+    cursor_label.set_xalign(1.0f);
+    cursor_label.set_hexpand(false);
+    status_bar.append(cursor_label);
+    // Charger préférence
+    var cfg = controller.get_config_manager();
+    show_statusbar_pref = cfg.get_boolean("General", "show_statusbar", true);
+    status_bar.set_visible(show_statusbar_pref);
+    main_box.append(status_bar);
 
         // Créer un ToastOverlay autour de main_box
         var toast_overlay = new Adw.ToastOverlay();
@@ -132,14 +142,17 @@ public class MainWindow : Adw.ApplicationWindow {
         set_content(toast_overlay);
 
         // Onglet par défaut
-        var default_editor = new EditorView(controller);
+    var default_editor = new EditorView(controller);
         default_editor.set_document_source((EditorView.DocumentSource)DocumentSource.UNKNOWN);
         default_editor.set_current_file_path("");
+    // MAJ en direct des coordonnées du curseur
+    default_editor.cursor_position_changed.connect((l, c) => { update_status_bar(); });
         editor_tabs.add(default_editor);
         var default_tab_box = create_tab_box(_("Nouveau document"), default_editor);
         editor_notebook.append_page(default_editor, default_tab_box);
         editor_notebook.set_tab_reorderable(default_editor, true);
         editor_notebook.set_current_page(0);
+    update_status_bar();
     }
 
     // === Actions et menus ===
@@ -175,17 +188,16 @@ public class MainWindow : Adw.ApplicationWindow {
 
         var about_action = new SimpleAction("about", null);
         about_action.activate.connect(() => {
-            var about = new Gtk.AboutDialog() {
-                transient_for = this,
-                program_name = "IntaText",
-                logo_icon_name = "com.cabineteto.IntaText",
-                version = "0.1.0",
-                authors = { "Cabinet ETO" },
-                copyright = "© 2023 Cabinet ETO",
-                license_type = Gtk.License.GPL_3_0,
-                website = "https://cabineteto.com",
-                website_label = _("Site Web")
-            };
+            var about = new Gtk.AboutDialog();
+            about.transient_for = this;
+            about.program_name = "IntaText";
+            about.logo_icon_name = "com.cabineteto.IntaText";
+            about.version = "0.1.0";
+            about.copyright = "© 2023 Cabinet ETO";
+            about.license_type = Gtk.License.GPL_3_0;
+            about.website = "https://cabineteto.com";
+            about.website_label = _("Site Web");
+            // Supprimé les auteurs pour éviter les problèmes de type
             about.present();
         });
 
@@ -207,30 +219,13 @@ public class MainWindow : Adw.ApplicationWindow {
         application.set_accels_for_action("win.save-file", {"<Control>s"});
         application.set_accels_for_action("win.save-file-as", {"<Control><Shift>s"});
 
-        // === AJOUT ICI ===
-        var ai_model_config_action = new SimpleAction("ai-model-config", null);
-        ai_model_config_action.activate.connect(() => {
-            // Ouvre la fenêtre de configuration IA
-            var controller = new IntaText.AI.AIModelController();
-            var win = new IntaText.AI.AIModelConfigWindow(controller);
-            win.set_transient_for(this);
-            win.present();
-        });
-        this.add_action(ai_model_config_action);
-
         var toggle_explorer_action = new SimpleAction("toggle-explorer", null);
         toggle_explorer_action.activate.connect(() => {
-            explorer_button.set_active(!explorer_button.get_active());
-            // Cela déclenche déjà la logique via le signal toggled du bouton
+            // Toggle: si l'explorateur est visible, on le masque, sinon on l'affiche
+            bool current_visible = (top_paned != null && top_paned.get_start_child() == explorer_view);
+            controller.toggle_explorer_visibility(!current_visible);
         });
         this.add_action(toggle_explorer_action);
-
-        var toggle_communication_action = new SimpleAction("toggle-communication", null);
-        toggle_communication_action.activate.connect(() => {
-            communication_button.set_active(!communication_button.get_active());
-            // Cela déclenche déjà la logique via le signal toggled du bouton
-        });
-        this.add_action(toggle_communication_action);
     }
 
     private GLib.MenuModel build_app_menu() {
@@ -255,14 +250,11 @@ public class MainWindow : Adw.ApplicationWindow {
         view_menu.append(_("Mode sombre"), "win.dark-mode");
         // AJOUT ICI :
         view_menu.append(_("Afficher/Masquer l'explorateur"), "win.toggle-explorer");
-        view_menu.append(_("Afficher/Masquer la communication"), "win.toggle-communication");
 
         var tools_menu = new GLib.Menu();
         tools_menu.append(_("Préférences"), "win.preferences");
         tools_menu.append(_("Comparer des fichiers..."), "win.compare-files");
         tools_menu.append(_("Extensions..."), "win.extensions");
-        // AJOUT ICI :
-        tools_menu.append(_("Configuration IA"), "win.ai-model-config");
 
         var help_menu = new GLib.Menu();
         help_menu.append(_("Documentation"), "win.documentation");
@@ -278,22 +270,7 @@ public class MainWindow : Adw.ApplicationWindow {
 
     // === Signaux et gestion d'état ===
     private void connect_signals() {
-        explorer_button.toggled.connect((button) => {
-            controller.toggle_explorer_visibility(button.get_active());
-        });
-        communication_button.toggled.connect(on_communication_toggle);
-
         this.close_request.connect(on_close_request);
-
-        editor_comm_paned.notify["position"].connect(() => {
-            int width, height;
-            this.get_default_size(out width, out height);
-            int min_comm_height = 150;
-            int max_editor_height = height - min_comm_height;
-            if (editor_comm_paned.get_position() > max_editor_height) {
-                editor_comm_paned.set_position(max_editor_height);
-            }
-        });
 
         main_paned.notify["position"].connect(() => {
             int width, height;
@@ -306,26 +283,12 @@ public class MainWindow : Adw.ApplicationWindow {
         });
     }
 
-    private void on_communication_toggle(ToggleButton button) {
-        if (button.active) {
-            communication_view.show();
-        } else {
-            communication_view.hide();
-        }
-    }
-
     public void set_integrated_explorer_visible(bool show) {
         if (use_detached_explorer || explorer_view == null || top_paned == null) return;
         if (show) {
-            top_paned.set_start_child(explorer_view);
+            explorer_view.set_visible(true);
         } else {
-            top_paned.set_start_child(null);
-        }
-    }
-
-    public void update_explorer_button_state(bool active) {
-        if (explorer_button != null) {
-            explorer_button.set_active(active);
+            explorer_view.set_visible(false);
         }
     }
 
@@ -362,6 +325,9 @@ public class MainWindow : Adw.ApplicationWindow {
         var page_num = editor_notebook.page_num(editor);
         var tab_label = editor_notebook.get_tab_label(editor);
         update_tab_appearance(editor, tab_label);
+    // Écoute de la position du curseur pour MAJ status bar
+    editor.cursor_position_changed.connect((l, c) => { update_status_bar(); });
+    update_status_bar();
     }
 
     private Box create_tab_box(string title, EditorView editor) {
@@ -385,6 +351,7 @@ public class MainWindow : Adw.ApplicationWindow {
         // Connect to document changes using a public method/property instead
         editor.notify["has-unsaved-changes"].connect(() => {
             update_tab_appearance(editor, tab_box);
+            update_status_bar();
         });
 
         return tab_box;
@@ -477,9 +444,12 @@ public class MainWindow : Adw.ApplicationWindow {
             editor_notebook.remove_page(index);
             if (editor_tabs.size == 0) {
                 var new_editor = new EditorView(controller);
+                // MAJ en direct des coordonnées du curseur pour le nouvel onglet vierge
+                new_editor.cursor_position_changed.connect((l, c) => { update_status_bar(); });
                 editor_tabs.add(new_editor);
                 editor_notebook.append_page(new_editor, new Label(_("Nouveau document")));
             }
+            update_status_bar();
         }
     }
 
@@ -547,12 +517,10 @@ public class MainWindow : Adw.ApplicationWindow {
         int width, height;
         this.get_default_size(out width, out height);
         var main_position = top_paned != null ? top_paned.get_position() : 0;
-        var editor_comm_position = main_paned.get_position();
         var config = controller.get_config_manager();
         config.set_integer("Window", "width", width);
         config.set_integer("Window", "height", height);
         config.set_integer("Window", "main_paned_position", main_position);
-        config.set_integer("Window", "editor_comm_paned_position", editor_comm_position);
         config.save();
     }
 
@@ -568,19 +536,10 @@ public class MainWindow : Adw.ApplicationWindow {
             controller.toggle_explorer_visibility(show_explorer);
             return false;
         });
-        update_explorer_button_state(show_explorer);
         if (!use_detached_explorer) {
             int main_position = config.get_integer("Window", "main_paned_position", 280);
-            int editor_comm_position = config.get_integer("Window", "editor_comm_paned_position", 500);
             Timeout.add(150, () => {
-                if (main_paned != null) main_paned.set_position(editor_comm_position);
                 if (top_paned != null) top_paned.set_position(main_position);
-                return false;
-            });
-        } else {
-            int editor_comm_position = config.get_integer("Window", "editor_comm_paned_position", 500);
-            Timeout.add(150, () => {
-                if (main_paned != null) main_paned.set_position(editor_comm_position);
                 return false;
             });
         }
@@ -595,6 +554,7 @@ public class MainWindow : Adw.ApplicationWindow {
         if (current_page >= 0 && current_page < editor_tabs.size) {
             var editor = editor_tabs[current_page];
             editor.save_document();
+            update_status_bar();
         }
     }
 
@@ -603,6 +563,7 @@ public class MainWindow : Adw.ApplicationWindow {
         if (current_page >= 0 && current_page < editor_tabs.size) {
             var editor = editor_tabs[current_page];
             editor.save_document_as();
+            update_status_bar();
         }
     }
 
@@ -617,6 +578,45 @@ public class MainWindow : Adw.ApplicationWindow {
         if (overlay != null) {
             overlay.add_toast(toast);
         }
+    }
+
+    // Formatte le texte du label curseur selon le masque demandé
+    private void update_cursor_label(EditorView? editor = null) {
+        if (cursor_label == null) return;
+        EditorView? ed = editor;
+        if (ed == null) {
+            int current_page = editor_notebook.get_current_page();
+            if (current_page >= 0 && current_page < editor_tabs.size) {
+                ed = editor_tabs[current_page];
+            }
+        }
+        if (ed == null) {
+            cursor_label.set_text("");
+            return;
+        }
+        int line = 1;
+        int col = 1;
+        ed.get_cursor_position(out line, out col);
+        // Masque exact: "Lig :xxxx  Col:xxx" (champs largeur 4 et 3)
+        cursor_label.set_text(@"Lig :%4d  Col:%3d".printf(line, col));
+    }
+
+    // Met à jour le contenu de la barre de statut
+    private void update_status_bar() {
+        if (status_label == null) return;
+        int current_page = editor_notebook.get_current_page();
+        if (current_page < 0 || current_page >= editor_tabs.size) {
+            status_label.set_text("");
+            update_cursor_label(null);
+            return;
+        }
+        var editor = editor_tabs[current_page];
+        string path = editor.get_current_file_path();
+        bool changed = editor.has_unsaved_changes;
+        string mark = changed ? _("(modifié)") : _("(enregistré)");
+        if (path == null || path == "") path = _("Nouveau document");
+        status_label.set_text(@"$path  $mark");
+        update_cursor_label(editor);
     }
 
     public unowned T? find_descendant_of_type<T>() {

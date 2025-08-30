@@ -23,6 +23,18 @@
     border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
 
+/* ===== BARRE DE STATUT ===== */
+.statusbar {
+    background-color: #ececec;
+    border-top: 1px solid #d0d0d0;
+    border-bottom: none;
+    padding: 4px 10px;
+    min-height: 28px;
+}
+.statusbar > label {
+    color: #333;
+}
+
 /* ===== CHAT ===== */
 .chat-view {
     background-color: #ffffff;
@@ -114,7 +126,6 @@ tooltip > label, tooltip label {
     border-top: 1px solid #d0d0d0;
     padding: 4px 10px 4px 10px;
     min-height: 28px;
-    align-items: center;
 }
 
 .editor-statusbar-label {
