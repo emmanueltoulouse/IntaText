@@ -187,7 +187,7 @@
                 "color": "terminal.ansiYellow"
             },
             "type": "shell",
-            "command": "find src -name '*.vala' | xargs -I{} bash -c 'echo \"Vérification de {}\"; if grep -q \"    \" {}; then echo \"AVERTISSEMENT: Espaces en début de ligne dans {}\"; fi; if grep -q \"\\t\" {}; then echo \"AVERTISSEMENT: Tabulations dans {}\"; fi'",
+            "command": "find src -name '*.vala' | xargs -I{} bash -c 'echo \"Vérification de {}\"; if grep -q \"\\t\" {}; then echo \"AVERTISSEMENT: Tabulations dans {}\"; fi; if grep -qE \"[[:space:]]+$\" {}; then echo \"AVERTISSEMENT: Espaces en fin de ligne dans {}\"; fi'",
             "group": "test",
             "presentation": {
                 "reveal": "always",

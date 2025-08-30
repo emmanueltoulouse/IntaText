@@ -1,71 +1,72 @@
 /* Application.vala
- *
- * Copyright 2023
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+  *
+  * Copyright 2023
+  *
+  * This program is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  */
 
 using Gtk;
 using Adw;
 
 namespace IntaText {
-    public class Application : Adw.Application {
-        private MainWindow main_window;
-        private ApplicationModel model;
-        private ApplicationController controller;
-        // Stockage direct de l'icône en tant que propriété de classe
-        private Gdk.Texture? custom_icon = null;
+public class Application : Adw.Application {
+private MainWindow main_window;
+private ApplicationModel model;
+private ApplicationController controller;
+// Stockage direct de l'icône en tant que propriété de classe
+private Gdk.Texture? custom_icon = null;
 
-        public Application() {
-            Object(
-                application_id: "com.cabineteto.IntaText",
-                flags: ApplicationFlags.FLAGS_NONE
-            );
+public Application() {
+    Object(
+        application_id: "com.cabineteto.IntaText",
+        flags: ApplicationFlags.FLAGS_NONE
+        );
 
-            // Définir le chemin de base des ressources
-            this.set_resource_base_path("/com/cabineteto/IntaText");
+    // Définir le chemin de base des ressources
+    this.set_resource_base_path("/com/cabineteto/IntaText");
 
-            // Vérifier s'il y a une icône personnalisée dans le home directory
-            string home_icon = Path.build_filename(Environment.get_home_dir(), "com.cabineteto.IntaText.png");
-            if (FileUtils.test(home_icon, FileTest.EXISTS)) {
-                try {
-                    // Stockage direct de la texture comme propriété de classe
-                    custom_icon = Gdk.Texture.from_file(File.new_for_path(home_icon));
-                } catch (Error e) {
-                    warning("Impossible de charger l'icône personnalisée: %s", e.message);
-                }
-            }
-
-            // S'assurer que les ressources sont correctement initialisées
-            ensure_resources();
-
-            // Charger les styles CSS
-            load_css();
+    // Vérifier s'il y a une icône personnalisée dans le home directory
+    string home_icon = Path.build_filename(Environment.get_home_dir(), "com.cabineteto.IntaText.png");
+    if (FileUtils.test(home_icon, FileTest.EXISTS)) {
+        try {
+            // Stockage direct de la texture comme propriété de classe
+            custom_icon = Gdk.Texture.from_file(File.new_for_path(home_icon));
+        } catch (Error e) {
+            warning("Impossible de charger l'icône personnalisée: %s", e.message);
         }
+    }
 
-        /**
-         * S'assure que les ressources de l'application sont correctement initialisées
-         */
-        private void ensure_resources() {
-            // Implémentation réelle ou supprimer la méthode si inutile
-            // Par exemple, initialiser des resources GResource
-        }
+    // S'assurer que les ressources sont correctement initialisées
+    ensure_resources();
 
-        private void load_css() {
-            try {
-                var css_provider = new Gtk.CssProvider();
-                css_provider.load_from_string("""
+    // Charger les styles CSS
+    load_css();
+}
+
+/**
+  * S'assure que les ressources de l'application sont correctement initialisées
+  */
+private void ensure_resources() {
+    // Implémentation réelle ou supprimer la méthode si inutile
+    // Par exemple, initialiser des resources GResource
+}
+
+private void load_css() {
+    try {
+        var css_provider = new Gtk.CssProvider();
+        css_provider.load_from_string(
+            """
                     .rounded {
                         border-radius: 12px;
                     }
@@ -88,68 +89,68 @@ namespace IntaText {
                     /* Autres styles existants... */
                 """);
 
-                // Appliquer le CSS
-                Gtk.StyleContext.add_provider_for_display(
-                    Gdk.Display.get_default(),
-                    css_provider,
-                    Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-                );
+        // Appliquer le CSS
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(),
+            css_provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            );
 
-                // trace supprimée
-            } catch (Error e) {
-                warning("Erreur lors du chargement du CSS: %s", e.message);
-            }
-        }
+        // trace supprimée
+    } catch (Error e) {
+        warning("Erreur lors du chargement du CSS: %s", e.message);
+    }
+}
 
-        protected override void activate() {
-            // Initialise le contrôleur d'abord
-            controller = new ApplicationController(null, this);
+protected override void activate() {
+    // Initialise le contrôleur d'abord
+    controller = new ApplicationController(null, this);
 
-            // Initialise le modèle avec le contrôleur
-            model = new ApplicationModel(controller);
+    // Initialise le modèle avec le contrôleur
+    model = new ApplicationModel(controller);
 
-            // Mettre à jour le contrôleur avec le modèle
-            controller.set_model(model);
+    // Mettre à jour le contrôleur avec le modèle
+    controller.set_model(model);
 
-            // Charge la configuration depuis le fichier INI
-            controller.load_configuration();
+    // Charge la configuration depuis le fichier INI
+    controller.load_configuration();
 
-            // Bon : le contrôleur lit la config AVANT la création de la fenêtre principale
-            controller.init();
-            main_window = new MainWindow(this, controller, controller.is_using_detached_explorer());
-            controller.set_main_window(main_window);
+    // Bon : le contrôleur lit la config AVANT la création de la fenêtre principale
+    controller.init();
+    main_window = new MainWindow(this, controller, controller.is_using_detached_explorer());
+    controller.set_main_window(main_window);
 
-            // Si nous avons une icône personnalisée, l'appliquer à l'application
-            if (custom_icon != null) {
-                // Dans GTK4, on définit l'icône au niveau de l'application
-                Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
-                    .add_resource_path("/com/cabineteto/IntaText/icons");
-                // L'icône sera utilisée automatiquement par les fenêtres de l'application
-            }
+    // Si nous avons une icône personnalisée, l'appliquer à l'application
+    if (custom_icon != null) {
+        // Dans GTK4, on définit l'icône au niveau de l'application
+        Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+        .add_resource_path("/com/cabineteto/IntaText/icons");
+        // L'icône sera utilisée automatiquement par les fenêtres de l'application
+    }
 
-            // AJOUT: Appeler initialize pour charger les favoris, etc.
-            controller.initialize();
+    // AJOUT: Appeler initialize pour charger les favoris, etc.
+    controller.initialize();
 
-            // Présenter la fenêtre principale
-            main_window.present();
+    // Présenter la fenêtre principale
+    main_window.present();
 
-            // Appliquer le style éditeur dès le démarrage
-            controller.apply_editor_style_from_preferences();
+    // Appliquer le style éditeur dès le démarrage
+    controller.apply_editor_style_from_preferences();
 
-            // Appeler la connexion des signaux APRÈS que toutes les fenêtres
-            // (y compris ExplorerWindow potentiellement créée dans init) soient prêtes.
-            // Utiliser un court délai pour être sûr que tout est dessiné.
-            Timeout.add(100, () => {
+    // Appeler la connexion des signaux APRÈS que toutes les fenêtres
+    // (y compris ExplorerWindow potentiellement créée dans init) soient prêtes.
+    // Utiliser un court délai pour être sûr que tout est dessiné.
+    Timeout.add(100, () => {
                 // trace supprimée
                 controller.connect_explorer_signals();
                 return false; // Exécuter une seule fois
             });
-        }
+}
 
-        public static int main(string[] args) {
-            Adw.init();
-            var app = new IntaText.Application();
-            return app.run(args);
-        }
-    }
+public static int main(string[] args) {
+    Adw.init();
+    var app = new IntaText.Application();
+    return app.run(args);
+}
+}
 }
