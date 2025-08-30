@@ -48,11 +48,49 @@ namespace IntaText {
             if (this.get_first_child() != null) {
                 return;
             }
+            // Barre d'icônes de formatage
+            var format_bar = new Gtk.Box(Orientation.HORIZONTAL, 6);
+            format_bar.add_css_class("toolbar");
+
+            Gtk.Button make_btn(string icon_name, string tooltip) {
+                var btn = new Gtk.Button();
+                var img = new Gtk.Image.from_icon_name(icon_name);
+                btn.set_child(img);
+                btn.set_tooltip_text(tooltip);
+                btn.add_css_class("flat");
+                return btn;
+            }
+
+            var btn_bold = make_btn("format-text-bold-symbolic", _("Gras"));
+            var btn_italic = make_btn("format-text-italic-symbolic", _("Italique"));
+            var btn_underline = make_btn("format-text-underline-symbolic", _("Souligné"));
+            var btn_strike = make_btn("format-text-strikethrough-symbolic", _("Barré"));
+
+            format_bar.append(btn_bold);
+            format_bar.append(btn_italic);
+            format_bar.append(btn_underline);
+            format_bar.append(btn_strike);
+
+            this.append(format_bar);
+
             // Zone d'édition scrollable minimale
             var scroll = new Gtk.ScrolledWindow();
             scroll.set_vexpand(true);
             scroll.set_hexpand(true);
             wysiwyg_editor = new WysiwygEditor();
+            // Connexions boutons => actions d'édition
+            btn_bold.clicked.connect(() => {
+                if (wysiwyg_editor != null) wysiwyg_editor.apply_bold();
+            });
+            btn_italic.clicked.connect(() => {
+                if (wysiwyg_editor != null) wysiwyg_editor.apply_italic();
+            });
+            btn_underline.clicked.connect(() => {
+                if (wysiwyg_editor != null) wysiwyg_editor.apply_format(IntaText.Document.TextFormatting.UNDERLINE);
+            });
+            btn_strike.clicked.connect(() => {
+                if (wysiwyg_editor != null) wysiwyg_editor.apply_format(IntaText.Document.TextFormatting.STRIKETHROUGH);
+            });
             // Détection des modifications
             var buf = wysiwyg_editor.get_buffer();
             buf.changed.connect(() => {

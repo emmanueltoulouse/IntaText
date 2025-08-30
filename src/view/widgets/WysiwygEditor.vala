@@ -53,16 +53,20 @@ namespace IntaText {
         public void apply_bold() {
             TextIter start, end;
             if (buffer.get_selection_bounds(out start, out end)) {
-                if (tag_bold != null)
-                    buffer.apply_tag(tag_bold, start, end);
+                if (tag_bold == null) {
+                    tag_bold = buffer.create_tag("bold", "weight", Pango.Weight.BOLD);
+                }
+                buffer.apply_tag(tag_bold, start, end);
             }
         }
 
         public void apply_italic() {
             TextIter start, end;
             if (buffer.get_selection_bounds(out start, out end)) {
-                if (tag_italic != null)
-                    buffer.apply_tag(tag_italic, start, end);
+                if (tag_italic == null) {
+                    tag_italic = buffer.create_tag("italic", "style", Pango.Style.ITALIC);
+                }
+                buffer.apply_tag(tag_italic, start, end);
             }
         }
 
@@ -100,12 +104,14 @@ namespace IntaText {
             if (buffer.get_selection_bounds(out start, out end)) {
                 switch (format) {
                     case TextFormatting.UNDERLINE:
-                        if (tag_underline != null)
-                            buffer.apply_tag(tag_underline, start, end);
+                        if (tag_underline == null)
+                            tag_underline = buffer.create_tag("underline", "underline", Pango.Underline.SINGLE);
+                        buffer.apply_tag(tag_underline, start, end);
                         break;
                     case TextFormatting.STRIKETHROUGH:
-                        if (tag_strikethrough != null)
-                            buffer.apply_tag(tag_strikethrough, start, end);
+                        if (tag_strikethrough == null)
+                            tag_strikethrough = buffer.create_tag("strikethrough", "strikethrough", true);
+                        buffer.apply_tag(tag_strikethrough, start, end);
                         break;
                     default:
                         break;
