@@ -69,6 +69,13 @@ namespace IntaText {
             this.append(scroll);
             // Position initiale
             emit_cursor_position();
+
+            // Appliquer le style par défaut depuis les préférences
+            var cfg = controller.get_config_manager();
+            int size = cfg.get_integer("Editor", "font_size", 12);
+            string family = cfg.get_string("Editor", "font_family", "Sans");
+            string color = cfg.get_string("Editor", "font_color", "#222222");
+            set_editor_style(size, family, color);
         }
 
         // === MÉTHODES DE LA CLASSE ===
