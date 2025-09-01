@@ -40,8 +40,8 @@ public WysiwygEditor() {
     // css.load_from_string(".wysiwyg-editor-textview { background-color: #fff; }");
     // Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
 
-    // Commenté temporairement - toutes les initialisations de tags
-    // ... (tous les tags commentés)
+    // Préparer les tags de formatage
+    ensure_tags();
 
     // Commenté temporairement
     // buffer.changed.connect(() => {
@@ -49,12 +49,62 @@ public WysiwygEditor() {
     // });
 }
 
+// Assure que tous les TextTags nécessaires existent et met à jour les champs
+private void ensure_tags() {
+    var table = buffer.get_tag_table();
+
+    // Bold
+    tag_bold = (Gtk.TextTag) table.lookup("bold");
+    if (tag_bold == null) tag_bold = buffer.create_tag("bold", "weight", Pango.Weight.BOLD);
+
+    // Italic
+    tag_italic = (Gtk.TextTag) table.lookup("italic");
+    if (tag_italic == null) tag_italic = buffer.create_tag("italic", "style", Pango.Style.ITALIC);
+
+    // Underline
+    tag_underline = (Gtk.TextTag) table.lookup("underline");
+    if (tag_underline == null) tag_underline = buffer.create_tag("underline", "underline", Pango.Underline.SINGLE);
+
+    // Strikethrough
+    tag_strikethrough = (Gtk.TextTag) table.lookup("strikethrough");
+    if (tag_strikethrough == null) tag_strikethrough = buffer.create_tag("strikethrough", "strikethrough", true);
+
+    // Code
+    tag_code = (Gtk.TextTag) table.lookup("code");
+    if (tag_code == null) {
+        // Monospace + légère coloration de fond
+        tag_code = buffer.create_tag("code",
+            "family", "monospace",
+            "background", "#f5f5f7");
+    }
+
+    // Headings
+    tag_heading1 = (Gtk.TextTag) table.lookup("heading1");
+    if (tag_heading1 == null) tag_heading1 = buffer.create_tag("heading1", "weight", Pango.Weight.BOLD, "scale", 1.6);
+    tag_heading2 = (Gtk.TextTag) table.lookup("heading2");
+    if (tag_heading2 == null) tag_heading2 = buffer.create_tag("heading2", "weight", Pango.Weight.BOLD, "scale", 1.3);
+    tag_heading3 = (Gtk.TextTag) table.lookup("heading3");
+    if (tag_heading3 == null) tag_heading3 = buffer.create_tag("heading3", "weight", Pango.Weight.BOLD, "scale", 1.15);
+
+    // Quote
+    tag_quote = (Gtk.TextTag) table.lookup("quote");
+    if (tag_quote == null) tag_quote = buffer.create_tag("quote", "foreground", "#666666", "indent", 20);
+
+    // Link
+    tag_link = (Gtk.TextTag) table.lookup("link");
+    if (tag_link == null) tag_link = buffer.create_tag("link", "underline", Pango.Underline.SINGLE, "foreground", "#0066cc");
+
+    // List
+    tag_list = (Gtk.TextTag) table.lookup("list");
+    if (tag_list == null) tag_list = buffer.create_tag("list", "indent", 12);
+}
+
 // Exemple d'utilisation sécurisée d'un tag
 public void apply_bold() {
     TextIter start, end;
     if (buffer.get_selection_bounds(out start, out end)) {
         if (tag_bold == null) {
-            tag_bold = buffer.create_tag("bold", "weight", Pango.Weight.BOLD);
+            ensure_tags();
         }
         buffer.apply_tag(tag_bold, start, end);
     }
@@ -64,7 +114,7 @@ public void apply_italic() {
     TextIter start, end;
     if (buffer.get_selection_bounds(out start, out end)) {
         if (tag_italic == null) {
-            tag_italic = buffer.create_tag("italic", "style", Pango.Style.ITALIC);
+            ensure_tags();
         }
         buffer.apply_tag(tag_italic, start, end);
     }
@@ -107,12 +157,12 @@ public void apply_format(TextFormatting format) {
         switch (format) {
         case TextFormatting.UNDERLINE:
             if (tag_underline == null)
-                tag_underline = buffer.create_tag("underline", "underline", Pango.Underline.SINGLE);
+                ensure_tags();
             buffer.apply_tag(tag_underline, start, end);
             break;
         case TextFormatting.STRIKETHROUGH:
             if (tag_strikethrough == null)
-                tag_strikethrough = buffer.create_tag("strikethrough", "strikethrough", true);
+                ensure_tags();
             buffer.apply_tag(tag_strikethrough, start, end);
             break;
         default:
@@ -389,6 +439,7 @@ public void load_pivot_document(PivotDocument doc) {
 }
 
 private void render_pivot_to_buffer(PivotDocument doc) {
+    ensure_tags();
     buffer.set_text("", 0);         // Vider le buffer
 
     if (doc == null || doc.children.size == 0) {
@@ -434,32 +485,9 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             // Marque pour le début du paragraphe
             TextMark para_start = buffer.create_mark(null, iter, true);
 
-            // Pour chaque segment, appliquer le style approprié
+            // Pour chaque segment, appliquer le style approprié, en gérant <u>…</u>
             foreach (var segment in para.segments) {
-                TextMark segment_start = buffer.create_mark(null, iter, true);
-                buffer.insert(ref iter, segment.text, -1);
-                TextIter seg_start, seg_end;
-                buffer.get_iter_at_mark(out seg_start, segment_start);
-                seg_end = iter;
-
-                // Appliquer tous les styles présents
-                if (segment.has_format(TextFormatting.BOLD))
-                    buffer.apply_tag(tag_bold, seg_start, seg_end);
-                if (segment.has_format(TextFormatting.ITALIC))
-                    buffer.apply_tag(tag_italic, seg_start, seg_end);
-                if (segment.has_format(TextFormatting.STRIKETHROUGH)) {
-                    if (tag_strikethrough == null)
-                        tag_strikethrough = buffer.create_tag("strikethrough", "strikethrough", true);
-                    buffer.apply_tag(tag_strikethrough, seg_start, seg_end);
-                }
-                if (segment.has_format(TextFormatting.UNDERLINE)) {
-                    tag_underline = buffer.create_tag("underline", "underline", Pango.Underline.SINGLE);
-                    buffer.apply_tag(tag_underline, seg_start, seg_end);
-                }
-                if (segment.has_format(TextFormatting.CODE))
-                    buffer.apply_tag(tag_code, seg_start, seg_end);
-
-                buffer.delete_mark(segment_start);
+                insert_segment_with_html_underline(ref iter, segment);
             }
 
             // Ajouter deux sauts de ligne après le paragraphe
@@ -582,6 +610,54 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.insert(ref current_iter, "--- FIN TABLEAU ---\n\n", -1);
         }
     }
+
+    // Rien à nettoyer: les marqueurs Markdown sont supprimés en amont, et <u>…</u> est géré à l’insertion
+}
+
+// Insère un segment de texte en appliquant ses formats et en traitant <u>…</u> comme souligné
+private void insert_segment_with_html_underline(ref TextIter iter, TextSegment segment) {
+    ensure_tags();
+    string txt = segment.text ?? "";
+    int pos = 0;
+    while (pos < txt.length) {
+        int open = txt.index_of("<u>", pos);
+        if (open == -1) {
+            // Insérer le reste tel quel
+            insert_run_with_formats(ref iter, txt.substring(pos), segment, false);
+            break;
+        }
+        // Insérer la partie avant <u>
+        if (open > pos) {
+            insert_run_with_formats(ref iter, txt.substring(pos, open - pos), segment, false);
+        }
+        int close = txt.index_of("</u>", open + 3);
+        if (close == -1) {
+            // Pas de fermeture: insérer le reste brut (sans enlever <u>)
+            insert_run_with_formats(ref iter, txt.substring(open), segment, false);
+            break;
+        }
+        // Contenu à souligner
+        string under = txt.substring(open + 3, close - (open + 3));
+        insert_run_with_formats(ref iter, under, segment, true);
+        pos = close + 4; // après </u>
+    }
+}
+
+// Insère du texte et applique tous les tags du segment, plus éventuellement le soulignement HTML
+private void insert_run_with_formats(ref TextIter iter, string run_text, TextSegment segment, bool add_underline) {
+    if (run_text == null || run_text.length == 0) return;
+    TextMark mark = buffer.create_mark(null, iter, true);
+    buffer.insert(ref iter, run_text, -1);
+    TextIter start;
+    buffer.get_iter_at_mark(out start, mark);
+    buffer.delete_mark(mark);
+
+    // Appliquer les tags
+    if (segment.has_format(TextFormatting.BOLD)) buffer.apply_tag(tag_bold, start, iter);
+    if (segment.has_format(TextFormatting.ITALIC)) buffer.apply_tag(tag_italic, start, iter);
+    if (segment.has_format(TextFormatting.STRIKETHROUGH)) buffer.apply_tag(tag_strikethrough, start, iter);
+    if (segment.has_format(TextFormatting.CODE)) buffer.apply_tag(tag_code, start, iter);
+    if (segment.has_format(TextFormatting.UNDERLINE) || add_underline) buffer.apply_tag(tag_underline, start, iter);
 }
 
 /**

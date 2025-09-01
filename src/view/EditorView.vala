@@ -169,10 +169,8 @@ public string get_current_file_path() {
 public void load_document(PivotDocument document) {
     current_document = document;
     if (wysiwyg_editor != null) {
-        var buf = wysiwyg_editor.get_buffer();
-        // Affichage simple du contenu textuel
-        string text = document.content ?? "";
-        buf.set_text(text, -1);
+    // Rendu riche à partir du document pivot
+    wysiwyg_editor.load_pivot_document(document);
         has_unsaved_changes = false;
     }
 }

@@ -326,15 +326,9 @@ private void on_file_selected_pivot(string path) {
     try {
         var converter_manager = DocumentConverterManager.get_instance();
         PivotDocument? pivot_document = converter_manager.open_file_as_pivot(path);
-    if (pivot_document != null) {
-            // trace supprimée
-        }
-        else {
-            // trace supprimée
-        }
-
-        // Check main_window first, then attempt to get editor_view (temporarily using controller's placeholder)
+        // Acheminer vers la fenêtre principale
         if (main_window != null) {
+            if (pivot_document == null) pivot_document = new PivotDocument() { content = "" };
             main_window.open_document_in_tab(pivot_document, path, DocumentSource.EXPLORER);
         }
         else {
@@ -354,14 +348,10 @@ public void handle_file_open_request(string path) {
     try {
         var converter_manager = DocumentConverterManager.get_instance();
         PivotDocument? pivot_document = converter_manager.open_file_as_pivot(path);
-        if (pivot_document != null) {
-            var win = get_main_window();
-            if (win != null) {
-                win.open_document_in_tab(pivot_document, path, DocumentSource.FILE_DIALOG);
-            }
-        }
-        else {
-            warning("Ouverture échouée: %s", path);
+        var win = get_main_window();
+        if (win != null) {
+            if (pivot_document == null) pivot_document = new PivotDocument() { content = "" };
+            win.open_document_in_tab(pivot_document, path, DocumentSource.FILE_DIALOG);
         }
     } catch (Error e) {
         warning("Erreur lors de l'ouverture: %s", e.message);
