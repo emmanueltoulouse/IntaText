@@ -392,34 +392,60 @@ public void load_document(PivotDocument document) {
 }
 
 public bool save_document(string? path = null) {
+    // 1) Déterminer la cible: paramètre, chemin courant, sinon défaut .md
     string target = path ?? _current_file_path;
     if (target == null || target == "") {
-        // Pas de chemin: utiliser save as
-        save_document_as();
+        // Nouveau document: défaut Markdown “pango” (assimilé à .md)
+        string home = Environment.get_home_dir();
+        target = Path.build_filename(home, "document.md");
+    }
+
+    if (wysiwyg_editor == null) return false;
+
+    // 2) Construire un PivotDocument depuis le buffer courant
+    PivotDocument pivot;
+    try {
+        pivot = wysiwyg_editor.get_pivot_document();
+    } catch (Error e) {
+        // Fallback minimal si la reconstruction échoue
+        var buf = wysiwyg_editor.get_buffer();
+        Gtk.TextIter s, e2;
+        buf.get_bounds(out s, out e2);
+        string txt = buf.get_text(s, e2, false);
+        pivot = new PivotDocument();
+        pivot.children.add(new PivotParagraph() { text = txt });
+    }
+    // Propager le chemin/format source si connu
+    if (_current_file_path != null && _current_file_path != "") {
+        pivot.source_path = _current_file_path;
+        // Déduire un format simple d’après l’extension
+        if (_current_file_path.has_suffix(".md")) pivot.source_format = "md";
+        else if (_current_file_path.has_suffix(".html") || _current_file_path.has_suffix(".htm")) pivot.source_format = "html";
+        else if (_current_file_path.has_suffix(".pivot")) pivot.source_format = "pivot";
+        else pivot.source_format = "txt";
+    } else {
+        pivot.source_path = target;
+        pivot.source_format = "md"; // défaut
+    }
+
+    // 3) Sauvegarder via le manager de conversion selon l’extension de la cible
+    try {
+        var conv = DocumentConverterManager.get_instance();
+        conv.save_pivot_to_file(pivot, target);
+        set_current_file_path(target);
+        has_unsaved_changes = false;
+        return true;
+    } catch (Error e) {
+        warning("Échec sauvegarde via converters: %s", e.message);
         return false;
     }
-    if (wysiwyg_editor != null) {
-        var buf = wysiwyg_editor.get_buffer();
-        Gtk.TextIter start;
-        Gtk.TextIter end;
-        buf.get_bounds(out start, out end);
-        string text = buf.get_text(start, end, false);
-        try {
-            FileUtils.set_contents(target, text);
-            has_unsaved_changes = false;
-            return true;
-        } catch (Error e) {
-            warning("Échec sauvegarde: %s", e.message);
-            return false;
-        }
-    }
-    return false;
 }
 
 public async bool save_document_as() {
     // Implémentation minimaliste sans interaction (fallback HOME)
     string home = Environment.get_home_dir();
-    string basename = _current_file_path != "" ? Path.get_basename(_current_file_path) : "document.txt";
+    // Si on a déjà un chemin, proposer le même nom; sinon défaut .md
+    string basename = _current_file_path != "" ? Path.get_basename(_current_file_path) : "document.md";
     string target = Path.build_filename(home, basename);
     bool ok = save_document(target);
     if (ok) set_current_file_path(target);
