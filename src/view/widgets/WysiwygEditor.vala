@@ -135,6 +135,62 @@ public void apply_heading(int level) {
     }
 }
 
+// Applique un style de titre (H1/H2/H3) sur la sélection ou la ligne courante
+public void apply_heading_action(int level) {
+    ensure_tags();
+    TextIter start, end;
+    if (buffer.get_selection_bounds(out start, out end)) {
+        // Nettoyer les autres niveaux de titres puis appliquer
+        buffer.remove_tag(tag_heading1, start, end);
+        buffer.remove_tag(tag_heading2, start, end);
+        buffer.remove_tag(tag_heading3, start, end);
+        if (level == 1) buffer.apply_tag(tag_heading1, start, end);
+        else if (level == 2) buffer.apply_tag(tag_heading2, start, end);
+        else buffer.apply_tag(tag_heading3, start, end);
+        return;
+    }
+
+    // Pas de sélection: appliquer au contenu de la ligne courante
+    Gtk.TextIter cursor;
+    buffer.get_iter_at_mark(out cursor, buffer.get_insert());
+    Gtk.TextIter line_start = cursor;
+    line_start.set_line_offset(0);
+    Gtk.TextIter line_end = cursor;
+    line_end.forward_to_line_end();
+    if (line_start.equal(line_end)) {
+        // Ligne vide: rien à faire (éviter d'insérer du texte automatiquement)
+        return;
+    }
+    buffer.remove_tag(tag_heading1, line_start, line_end);
+    buffer.remove_tag(tag_heading2, line_start, line_end);
+    buffer.remove_tag(tag_heading3, line_start, line_end);
+    if (level == 1) buffer.apply_tag(tag_heading1, line_start, line_end);
+    else if (level == 2) buffer.apply_tag(tag_heading2, line_start, line_end);
+    else buffer.apply_tag(tag_heading3, line_start, line_end);
+}
+
+// Supprime tout style de titre (H1/H2/H3) sur la sélection ou la ligne courante
+public void clear_heading_action() {
+    ensure_tags();
+    TextIter start, end;
+    if (buffer.get_selection_bounds(out start, out end)) {
+        buffer.remove_tag(tag_heading1, start, end);
+        buffer.remove_tag(tag_heading2, start, end);
+        buffer.remove_tag(tag_heading3, start, end);
+        return;
+    }
+    Gtk.TextIter cursor;
+    buffer.get_iter_at_mark(out cursor, buffer.get_insert());
+    Gtk.TextIter line_start = cursor;
+    line_start.set_line_offset(0);
+    Gtk.TextIter line_end = cursor;
+    line_end.forward_to_line_end();
+    if (line_start.equal(line_end)) return; // ligne vide
+    buffer.remove_tag(tag_heading1, line_start, line_end);
+    buffer.remove_tag(tag_heading2, line_start, line_end);
+    buffer.remove_tag(tag_heading3, line_start, line_end);
+}
+
 public void apply_code() {
     TextIter start, end;
     if (buffer.get_selection_bounds(out start, out end)) {
@@ -200,6 +256,16 @@ public bool is_strikethrough_active() {
     return it.has_tag(tag_strikethrough);
 }
 
+// Renvoie 0 si aucun titre n'est actif, sinon 1, 2 ou 3
+public int get_active_heading_level() {
+    ensure_tags();
+    Gtk.TextIter it;
+    buffer.get_iter_at_mark(out it, buffer.get_insert());
+    if (it.has_tag(tag_heading1)) return 1;
+    if (it.has_tag(tag_heading2)) return 2;
+    if (it.has_tag(tag_heading3)) return 3;
+    return 0;
+}
 public void toggle_bold() {
     TextIter start, end;
     if (!buffer.get_selection_bounds(out start, out end)) return;
@@ -318,6 +384,56 @@ public void insert_code_block() {
 
     // Supprimer le marqueur
     buffer.delete_mark(code_start);
+}
+
+// Applique une liste à la sélection si présente, sinon insère une nouvelle liste
+public void apply_list_action(bool ordered) {
+    ensure_tags();
+    if (has_selection()) {
+        apply_list_to_selection(ordered);
+    } else {
+        insert_list(ordered);
+    }
+}
+
+// Transforme les lignes sélectionnées en liste à puces ou numérotée
+private void apply_list_to_selection(bool ordered) {
+    TextIter start, end;
+    if (!buffer.get_selection_bounds(out start, out end)) return;
+
+    // Extraire le texte sélectionné
+    string selected = buffer.get_text(start, end, false);
+    // Fractionner en lignes en préservant structure simple
+    string[] lines = selected.split("\n");
+    if (lines.length == 0) return;
+
+    // Construire le nouveau bloc
+    StringBuilder sb = new StringBuilder();
+    int idx = 1;
+    for (int i = 0; i < lines.length; i++) {
+        string ln = lines[i];
+        // Conserver les lignes vides mais préfixer uniquement si non vide
+        if (ln.strip().length > 0) {
+            if (ordered) sb.append("%d. ".printf(idx++));
+            else sb.append("\u2022 ");
+        }
+        sb.append(ln);
+        if (i < lines.length - 1) sb.append("\n");
+    }
+
+    // Remplacer la sélection par le nouveau texte et appliquer le tag_list
+    buffer.begin_user_action();
+    buffer.delete(ref start, ref end);
+    TextIter insert_at;
+    buffer.get_iter_at_mark(out insert_at, buffer.get_insert());
+    TextMark mark_begin = buffer.create_mark(null, insert_at, true);
+    buffer.insert(ref insert_at, sb.str, -1);
+    TextIter list_start, list_end;
+    buffer.get_iter_at_mark(out list_start, mark_begin);
+    list_end = insert_at;
+    buffer.apply_tag(tag_list, list_start, list_end);
+    buffer.delete_mark(mark_begin);
+    buffer.end_user_action();
 }
 
 public void insert_link(string url, string text) {
