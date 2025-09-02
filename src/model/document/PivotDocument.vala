@@ -79,7 +79,7 @@ public string content {
         return this.to_markdown();
     }
     set {
-        children.clear();
+    children.clear();
         if (value != null && value != ""){
             children.add(new PivotParagraph() {
                         text = value
@@ -187,13 +187,17 @@ public static PivotDocument deserialize(string content) throws Error {
 public class PivotHeading : PivotNode {
 public int level;
 public string text;
+
 public override string to_markdown(){
-    // TODO: Implement markdown conversion for PivotHeading
-    return "";
+    // ATX headings par défaut; conversion Setext effectuée plus haut selon préférences
+    int lvl = level.clamp(1, 6);
+    string hashes = string.nfill(lvl, '#');
+    return "%s %s".printf(hashes, text ?? "");
 }
+
 public override string to_html(){
-    // TODO: Implement HTML conversion for PivotHeading
-    return "";
+    int lvl = level.clamp(1, 6);
+    return "<h%d>%s</h%d>".printf(lvl, GLib.Markup.escape_text(text ?? ""), lvl);
 }
 
 public override Json.Object to_json(){
@@ -204,7 +208,6 @@ public override Json.Object to_json(){
     return obj;
 }
 
-// Ajouter 'new' pour masquer la méthode parente
 public new static PivotHeading from_json(Json.Object node) throws Error {
     var heading = new PivotHeading();
     if (node.has_member("level")) heading.level = (int)node.get_int_member("level");
@@ -314,9 +317,7 @@ public override string to_html(){
         if (segment.has_format(TextFormatting.STRIKETHROUGH)){
             current_text = "<s>" + current_text + "</s>";
         }
-        if (segment.has_format(TextFormatting.UNDERLINE)){
-            current_text = "<u>" + current_text + "</u>";          // Balise HTML pour souligné
-        }
+    // Ne pas injecter de <u> ici; le rendu HTML peut être géré ailleurs.
         if (segment.has_format(TextFormatting.BOLD)){
             current_text = "<strong>" + current_text + "</strong>";
         }
@@ -367,8 +368,33 @@ public class PivotList : PivotNode {
 public bool ordered;
 public Gee.List<PivotListItem> items = new Gee.ArrayList<PivotListItem>();
 public override string to_markdown(){
-    // TODO: Implement markdown conversion for PivotList
-    return "";
+    string s = to_markdown_with_indent(0);
+    // Retirer le dernier saut de ligne superflu si présent
+    if (s.length > 0 && s.has_suffix("\n")) s = s.substring(0, s.length - 1);
+    return s;
+}
+
+private string to_markdown_with_indent(int level){
+    StringBuilder b = new StringBuilder();
+    string indent = "";
+    for (int i = 0; i < level * 3; i++) indent += " ";
+    if (ordered) {
+        int idx = 1;
+        foreach (var item in items) {
+            b.append("%s%d. %s\n".printf(indent, idx++, item.to_markdown()));
+            if (item.children != null && item.children.items.size > 0) {
+                b.append(item.children.to_markdown_with_indent(level + 1));
+            }
+        }
+    } else {
+        foreach (var item in items) {
+            b.append("%s- %s\n".printf(indent, item.to_markdown()));
+            if (item.children != null && item.children.items.size > 0) {
+                b.append(item.children.to_markdown_with_indent(level + 1));
+            }
+        }
+    }
+    return b.str;
 }
 public override string to_html(){
     // Simple HTML list conversion
@@ -421,19 +447,29 @@ public new static PivotList from_json(Json.Object node) throws Error {
 // Spécifier GLib.Object
 public class PivotListItem : PivotNode {
 public string text;
+public PivotList? children; // liste imbriquée optionnelle
 public override string to_markdown(){
-    // Simple markdown for list item
+    // Simple markdown for list item (inline content already markdown-friendly)
     return (text ?? "");
 }
 public override string to_html(){
-    // Simple HTML list item conversion
-    return "<li>" + (text ?? "") + "</li>";
+    // HTML list item conversion with optional nested list
+    StringBuilder b = new StringBuilder();
+    b.append("<li>").append(text ?? "");
+    if (children != null && children.items.size > 0) {
+        b.append(children.to_html());
+    }
+    b.append("</li>");
+    return b.str;
 }
 
 public override Json.Object to_json(){
     var obj = new Json.Object();
     obj.set_string_member("type", "ListItem");
     obj.set_string_member("text", text ?? "");         // Simplifié, pourrait être des segments plus tard
+    if (children != null){
+        obj.set_object_member("children", children.to_json());
+    }
     return obj;
 }
 
@@ -441,6 +477,7 @@ public override Json.Object to_json(){
 public new static PivotListItem from_json(Json.Object node) throws Error {
     var item = new PivotListItem();
     if (node.has_member("text")) item.text = node.get_string_member("text");
+    if (node.has_member("children")) item.children = PivotList.from_json(node.get_object_member("children"));
     return item;
 }
 }

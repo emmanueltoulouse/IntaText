@@ -138,3 +138,20 @@ configure_file(
 
 # Configuration pour l'internationalisation
 subdir('po')
+
+# Outil de round-trip Markdown -> Pivot -> Markdown (ligne de commande)
+md_rt_sources = [
+  'src/model/document/PivotDocument.vala',
+  'src/model/document/DocumentConverter.vala',
+  'src/model/document/PivotDocumentConverter.vala',
+  'src/model/document/TextDocumentConverter.vala',
+  'src/model/document/MarkdownDocumentConverter.vala',
+  'src/model/document/HtmlDocumentConverter.vala',
+  'tools/md_roundtrip.vala',
+]
+
+executable('md_rt',
+  sources: md_rt_sources,
+  dependencies: [gee_dep, json_dep],
+  install: false
+)

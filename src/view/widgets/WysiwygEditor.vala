@@ -211,7 +211,7 @@ public void apply_format(TextFormatting format) {
     TextIter start, end;
     if (buffer.get_selection_bounds(out start, out end)) {
         switch (format) {
-        case TextFormatting.UNDERLINE:
+            case TextFormatting.UNDERLINE:
             if (tag_underline == null)
                 ensure_tags();
             buffer.apply_tag(tag_underline, start, end);
@@ -614,11 +614,14 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         }
         else if (node is PivotList) {
             var list = (PivotList)node;
-            foreach (var item in list.items) {
-                // Insérer l'élément de liste avec un symbole ou un numéro
-                buffer.insert(ref iter, "• " + item.text + "\n", -1);
-            }
+            // Début de plage de liste
+            TextMark list_start = buffer.create_mark(null, iter, true);
+            render_list_to_buffer(list, ref iter, 0);
             buffer.insert(ref iter, "\n", -1);
+            TextIter list_begin_iter;
+            buffer.get_iter_at_mark(out list_begin_iter, list_start);
+            buffer.apply_tag(tag_list, list_begin_iter, iter);
+            buffer.delete_mark(list_start);
         }
         else if (node is PivotCodeBlock) {
             var code = (PivotCodeBlock)node;
@@ -759,6 +762,21 @@ private void insert_segment_with_html_underline(ref TextIter iter, TextSegment s
     }
 }
 
+// Rendu récursif des listes (avec imbrication)
+private void render_list_to_buffer(PivotList l, ref TextIter iter, int level) {
+    string indent = string.nfill(level * 3, ' ');
+    int local = 1;
+    foreach (var it in l.items) {
+        if (l.ordered) buffer.insert(ref iter, indent + "%d. ".printf(local++), -1);
+        else buffer.insert(ref iter, indent + "• ", -1);
+        buffer.insert(ref iter, it.text ?? "", -1);
+        buffer.insert(ref iter, "\n", -1);
+        if (it.children != null && it.children.items.size > 0) {
+            render_list_to_buffer(it.children, ref iter, level + 1);
+        }
+    }
+}
+
 // Insère du texte et applique tous les tags du segment, plus éventuellement le soulignement HTML
 private void insert_run_with_formats(ref TextIter iter, string run_text, TextSegment segment, bool add_underline) {
     if (run_text == null || run_text.length == 0) return;
@@ -781,99 +799,241 @@ private void insert_run_with_formats(ref TextIter iter, string run_text, TextSeg
   * Cette méthode est l'inverse de render_pivot_to_buffer
   */
 public PivotDocument get_pivot_document() {
-    // Utiliser le document pivot existant comme base ou en créer un nouveau
+    ensure_tags();
     var doc = pivot_doc ?? new PivotDocument();
-
-    // Effacer le contenu existant
     doc.children.clear();
 
-    // Obtenir le texte complet du buffer avec les balises
-    TextIter start, end;
-    buffer.get_bounds(out start, out end);
+    // Parcours linéaire par lignes
+    TextIter iter;
+    buffer.get_start_iter(out iter);
 
-    // Traiter le contenu par paragraphes
-    string full_text = buffer.get_text(start, end, true);
-    string[] paragraphs = full_text.split("\n\n");
+    // États courants
+    bool in_code = false;
+    bool in_quote = false;
+    bool in_list = false;
+    bool in_paragraph = false;
 
-    foreach (string para_text in paragraphs) {
-        // Ignorer les paragraphes vides
-        if (para_text.strip() == "")
-            continue;
+    // Bornes de bloc (initialisés au début du buffer)
+    TextIter block_start; buffer.get_start_iter(out block_start); // valide quand un bloc est actif
+    TextIter line_start; buffer.get_start_iter(out line_start);
+    TextIter line_end; buffer.get_start_iter(out line_end);
 
-        // Détecter les titres (par leur taille dans le buffer)
-        bool is_heading1 = false;
-        bool is_heading2 = false;
-        bool is_heading3 = false;
-        bool is_code = false;
-        bool is_quote = false;
+    // Accumulateurs pour blocs qui combinent plusieurs lignes
+    Gee.ArrayList<string> lines_accum = new Gee.ArrayList<string>();
 
-        // Vérifier les balises appliquées pour déterminer le type de contenu
-        TextIter para_start, para_end;
-        if (find_paragraph_bounds(para_text, out para_start, out para_end)) {
-            // Vérifier les tags appliqués au paragraphe
-            SList<weak TextTag> tags = para_start.get_tags();
-            foreach (weak TextTag tag in tags) {
-                if (tag == tag_heading1) is_heading1 = true;
-                else if (tag == tag_heading2) is_heading2 = true;
-                else if (tag == tag_heading3) is_heading3 = true;
-                else if (tag == tag_code) is_code = true;
-                else if (tag == tag_quote) is_quote = true;
+    void flush_paragraph_block(TextIter start_it, TextIter end_it) {
+        if (!in_paragraph) return;
+        // Vérifier des itérateurs valides
+        if (start_it.get_buffer() != buffer || end_it.get_buffer() != buffer) { in_paragraph = false; return; }
+        string txt = buffer.get_text(start_it, end_it, false).strip();
+        if (txt.length > 0) {
+            var para = new PivotParagraph();
+            para.segments = extract_formatted_segments(txt, start_it, end_it);
+            doc.children.add(para);
+        }
+        in_paragraph = false;
+    }
+
+    void flush_code_block() {
+        if (!in_code) return;
+        // Récupérer le texte du bloc code
+        TextIter end_it = line_end; // fin de la dernière ligne vue
+        if (block_start.get_buffer() != buffer || end_it.get_buffer() != buffer) { in_code = false; return; }
+        string code_text = buffer.get_text(block_start, end_it, false);
+        // Découper par lignes pour retirer une éventuelle première ligne [lang]
+        string[] code_lines = code_text.split("\n");
+        var code = new PivotCodeBlock();
+        if (code_lines.length > 0 && code_lines[0].strip().has_prefix("[") && code_lines[0].strip().has_suffix("]")) {
+            string lang_line = code_lines[0].strip();
+            code.language = lang_line.substring(1, lang_line.length - 2);
+            code.code = string.joinv("\n", code_lines[1 : code_lines.length]);
+        } else {
+            code.language = "";
+            code.code = code_text;
+        }
+        doc.children.add(code);
+        in_code = false;
+    }
+
+    void flush_quote_block() {
+        if (!in_quote) return;
+        string joined = string.joinv("\n", (string[]) lines_accum.to_array());
+        // Retirer le préfixe visuel «❝ » par ligne
+        var cleaned_lines = new Gee.ArrayList<string>();
+        foreach (string l in joined.split("\n")) {
+            string t = l.strip();
+            if (t.has_prefix("❝ ")) t = t.substring(2);
+            if (t.has_prefix("> ")) t = t.substring(2);
+            cleaned_lines.add(t);
+        }
+        var quote = new PivotQuote();
+        quote.text = string.joinv("\n", (string[]) cleaned_lines.to_array());
+        doc.children.add(quote);
+        lines_accum.clear();
+        in_quote = false;
+    }
+
+    void flush_list_block() {
+        if (!in_list) return;
+        // Construire via pile d'indentation
+        Gee.ArrayList<int> indents = new Gee.ArrayList<int>();
+        Gee.ArrayList<PivotList> stacks = new Gee.ArrayList<PivotList>();
+        PivotList root = new PivotList(); root.ordered = false;
+        indents.add(0); stacks.add(root);
+        foreach (string l in lines_accum) {
+            // calcul indentation
+            int leading = 0; while (leading < l.length && (l[leading] == ' ' || l[leading] == '\t')) leading++;
+            string t = l.strip();
+            bool is_bullet = t.has_prefix("• ") || t.has_prefix("- ") || t.has_prefix("* ") || t.has_prefix("+ ");
+            int di = t.index_of(". ");
+            bool is_ordered = false;
+            if (di > 0) { is_ordered = true; for (int k = 0; k < di; k++) { if (!(t[k] >= '0' && t[k] <= '9')) { is_ordered = false; break; } } }
+            string item_text = null;
+            if (is_bullet) {
+                int off = 2; if (t.has_prefix("• ")) off = "• ".length; item_text = t.substring(off).strip();
+            } else if (is_ordered) {
+                item_text = t.substring(di + 2).strip();
+            } else {
+                continue; // ignorer ligne qui n'est pas un item
             }
+            int level = leading / 3;
+            // niveau racine a indents.size == 1
+            while (level + 1 < indents.size) { indents.remove_at(indents.size - 1); stacks.remove_at(stacks.size - 1); }
+            while (level + 1 > indents.size) {
+                var nl = new PivotList(); nl.ordered = is_ordered; // hérite du type rencontré
+                var parent = stacks.get(stacks.size - 1);
+                if (parent.items.size == 0) parent.items.add(new PivotListItem() { text = "" });
+                var last = parent.items.get(parent.items.size - 1);
+                last.children = nl;
+                indents.add(indents.size); stacks.add(nl);
+            }
+            var current = stacks.get(stacks.size - 1);
+            // si le type diffère (ordered vs unordered), créer un sous-list dédié
+            if (current.ordered != is_ordered) {
+                var nl2 = new PivotList(); nl2.ordered = is_ordered;
+                var parent2 = current;
+                if (parent2.items.size == 0) parent2.items.add(new PivotListItem() { text = "" });
+                var last2 = parent2.items.get(parent2.items.size - 1);
+                last2.children = nl2;
+                stacks.add(nl2);
+            }
+            stacks.get(stacks.size - 1).items.add(new PivotListItem() { text = item_text });
+        }
+        if (root.items.size > 0) doc.children.add(root);
+        lines_accum.clear();
+        in_list = false;
+    }
+
+    while (true) {
+        // Fin du buffer ?
+        if (iter.is_end()) {
+            // Flush des blocs actifs
+            if (in_code) flush_code_block();
+            if (in_quote) flush_quote_block();
+            if (in_list) flush_list_block();
+            // Paragraphe: block_start -> dernier line_end connu
+            if (in_paragraph) flush_paragraph_block(block_start, line_end);
+            break;
         }
 
-        // Créer le nœud approprié selon le type détecté
-        if (is_heading1 || is_heading2 || is_heading3) {
-            var heading = new PivotHeading();
-            heading.text = para_text.strip();
-            heading.level = is_heading1 ? 1 : (is_heading2 ? 2 : 3);
-            doc.children.add(heading);
-        }
-        else if (is_code) {
-            var code_block = new PivotCodeBlock();
-            // Essayer de détecter le langage s'il est spécifié
-            string[] code_lines = para_text.split("\n");
-            if (code_lines.length > 0 && code_lines[0].has_prefix("[") && code_lines[0].has_suffix("]")) {
-                code_block.language = code_lines[0].substring(1, code_lines[0].length - 2);
-                // Retirer la ligne de langage
-                code_block.code = string.joinv("\n", code_lines[1 : code_lines.length]);
-            }
-            else {
-                code_block.code = para_text;
-            }
-            doc.children.add(code_block);
-        }
-        else if (is_quote) {
-            var quote = new PivotQuote();
-            // Retirer le préfixe "❝ " si présent
-            if (para_text.has_prefix("❝ "))
-                quote.text = para_text.substring(2);
-            else
-                quote.text = para_text;
-            doc.children.add(quote);
-        }
-        else if (para_text.contains("•") && para_text.contains("\n")) {
-            // Probablement une liste à puces
-            var list = new PivotList();
-            list.ordered = false;
-            string[] list_items = para_text.split("\n");
-            foreach (string item_text in list_items) {
-                string trimmed = item_text.strip();
-                if (trimmed.has_prefix("•")) {
-                    var list_item = new PivotListItem();
-                    list_item.text = trimmed.substring(1).strip();         // Retirer le bullet
-                    list.items.add(list_item);
+        // Début/fin de ligne courante
+        line_start = iter;
+        line_start.set_line_offset(0);
+        line_end = line_start;
+        line_end.forward_to_line_end();
+
+    string line_text = buffer.get_text(line_start, line_end, false);
+    string tline = line_text.strip();
+    bool is_blank = tline.length == 0;
+
+        // Détection des tags de bloc au début de la ligne
+        bool lh1 = line_start.has_tag(tag_heading1);
+        bool lh2 = line_start.has_tag(tag_heading2);
+        bool lh3 = line_start.has_tag(tag_heading3);
+        bool lcode = line_start.has_tag(tag_code);
+        bool lquote = line_start.has_tag(tag_quote) || tline.has_prefix("❝") || tline.has_prefix("> ");
+        bool llist = line_start.has_tag(tag_list) || tline.has_prefix("• ") || tline.has_prefix("- ") || tline.has_prefix("* ") || tline.has_prefix("+ ");
+        if (!llist) {
+            int di = tline.index_of(". ");
+            if (di > 0) {
+                bool numeric = true;
+                for (int k = 0; k < di; k++) {
+                    if (!(tline[k] >= '0' && tline[k] <= '9')) { numeric = false; break; }
                 }
-            }
-            if (list.items.size > 0) {
-                doc.children.add(list);
-                continue;
+                if (numeric) llist = true;
             }
         }
 
-        // Paragraphe standard avec formatage
-        var pivot_para = new PivotParagraph();
-        pivot_para.segments = extract_formatted_segments(para_text, para_start, para_end);
-        doc.children.add(pivot_para);
+        // Délimiteurs de blocs: ligne vide sépare tout
+        if (is_blank) {
+            if (in_code) flush_code_block();
+            if (in_quote) flush_quote_block();
+            if (in_list) flush_list_block();
+            if (in_paragraph) flush_paragraph_block(block_start, line_end);
+            in_code = in_quote = in_list = in_paragraph = false;
+            // Avancer à la ligne suivante
+            if (!iter.forward_line()) break;
+            continue;
+        }
+
+        // Headings: ligne autonome
+        if (lh1 || lh2 || lh3) {
+            // Flush blocs précédents
+            if (in_code) flush_code_block();
+            if (in_quote) flush_quote_block();
+            if (in_list) flush_list_block();
+            if (in_paragraph) flush_paragraph_block(block_start, line_end);
+            in_code = in_quote = in_list = in_paragraph = false;
+
+            var heading = new PivotHeading();
+            heading.text = line_text.strip();
+            heading.level = lh1 ? 1 : (lh2 ? 2 : 3);
+            doc.children.add(heading);
+            if (!iter.forward_line()) break;
+            continue;
+        }
+
+        // Code block
+        if (lcode) {
+            if (!in_code) {
+                // démarrage bloc code
+                block_start = line_start;
+                in_code = true;
+            }
+            // Avancer et continuer à accumuler jusqu’à fin ou ligne vide (gérée plus haut)
+            if (!iter.forward_line()) { /* handled by loop top */ }
+            continue;
+        }
+
+        // Quote block
+        if (lquote) {
+            if (!in_quote) {
+                lines_accum.clear();
+                in_quote = true;
+            }
+            lines_accum.add(line_text);
+            if (!iter.forward_line()) { /* handled by loop top */ }
+            continue;
+        }
+
+        // List block
+        if (llist) {
+            if (!in_list) {
+                lines_accum.clear();
+                in_list = true;
+            }
+            lines_accum.add(line_text);
+            if (!iter.forward_line()) { /* handled by loop top */ }
+            continue;
+        }
+
+        // Paragraphe (aucun tag de bloc)
+        if (!in_paragraph) {
+            block_start = line_start;
+            in_paragraph = true;
+        }
+        // Avancer à la ligne suivante; la fermeture sera gérée par ligne vide ou fin
+        if (!iter.forward_line()) { /* handled by loop top */ }
     }
 
     return doc;
@@ -949,8 +1109,10 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
         iteration_count++;
 
         TextIter segment_end = current;
+        // Inclure underline dans la détection pour découper correctement
         bool has_tag = segment_end.has_tag(tag_bold) || segment_end.has_tag(tag_italic) ||
-                       segment_end.has_tag(tag_strikethrough) || segment_end.has_tag(tag_code);
+                       segment_end.has_tag(tag_strikethrough) || segment_end.has_tag(tag_code) ||
+                       segment_end.has_tag(tag_underline);
 
         // Avancer caractère par caractère jusqu'à un changement de format ou la fin du paragraphe
         int safety_counter = 0;
@@ -960,7 +1122,8 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
             safety_counter++;
 
             bool current_has_tag = segment_end.has_tag(tag_bold) || segment_end.has_tag(tag_italic) ||
-                                   segment_end.has_tag(tag_strikethrough) || segment_end.has_tag(tag_code);
+                                   segment_end.has_tag(tag_strikethrough) || segment_end.has_tag(tag_code) ||
+                                   segment_end.has_tag(tag_underline);
 
             // Si le formatage change, arrêter
             if (has_tag != current_has_tag) {
@@ -984,7 +1147,7 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
 
         // Détecter le formatage appliqué
         var formats = new Gee.HashSet<TextFormatting>();
-        if (current.has_tag(tag_bold))
+    if (current.has_tag(tag_bold))
             formats.add(TextFormatting.BOLD);
         if (current.has_tag(tag_italic))
             formats.add(TextFormatting.ITALIC);
@@ -992,7 +1155,8 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
             formats.add(TextFormatting.STRIKETHROUGH);
         if (current.has_tag(tag_code))
             formats.add(TextFormatting.CODE);
-        if (current.has_tag(tag_underline) || buffer.get_tag_table().lookup("underline") != null)
+    // N’ajouter souligné que si le segment courant possède réellement le tag
+    if (current.has_tag(tag_underline))
             formats.add(TextFormatting.UNDERLINE);
 
         // Créer le segment

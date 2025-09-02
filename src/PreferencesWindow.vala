@@ -103,6 +103,30 @@ private void add_page_general() {
     confirm_switch.set_valign(Gtk.Align.CENTER);
     confirm_row.add_suffix(confirm_switch);
     general_group.add(confirm_row);
+
+    // 15. Style des titres Markdown (ATX / Setext)
+    var md_heading_row = new Adw.ActionRow();
+    md_heading_row.set_title(_("Style des titres Markdown"));
+    md_heading_row.set_subtitle(_("ATX (#, ##, ###) ou Setext (====, ----)"));
+    var md_heading_list = new Gtk.StringList({ "ATX ( #, ##, ### )", "Setext ( ====, ---- )" });
+    var md_heading_dropdown = new Gtk.DropDown(md_heading_list, null);
+    md_heading_row.add_suffix(md_heading_dropdown);
+    md_heading_row.set_activatable_widget(md_heading_dropdown);
+    // Liaison GSettings
+    try {
+        var settings = new GLib.Settings("com.cabineteto.IntaText");
+        string val = settings.get_string("markdown-heading-style");
+        uint idx = (val == "setext") ? 1u : 0u;
+        md_heading_dropdown.set_selected(idx);
+        md_heading_dropdown.notify["selected"].connect(() => {
+            var selected = md_heading_dropdown.get_selected();
+            string v = (selected == 1) ? "setext" : "atx";
+            settings.set_string("markdown-heading-style", v);
+        });
+    } catch (Error e) {
+        // Ignore: fallback UI sans persistance
+    }
+    general_group.add(md_heading_row);
     general_page.add(general_group);
     this.add(general_page);
 }

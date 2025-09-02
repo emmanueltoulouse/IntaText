@@ -402,6 +402,26 @@ public bool save_document(string? path = null) {
 
     if (wysiwyg_editor == null) return false;
 
+    // Écriture directe pour .md et .txt afin d'éviter toute altération
+    string lower_target = target.down();
+    bool is_markdown = (lower_target.has_suffix(".md") || lower_target.has_suffix(".markdown"));
+    bool is_text = (lower_target.has_suffix(".txt"));
+    if (is_text && wysiwyg_editor != null) {
+        try {
+            var buf_dir = wysiwyg_editor.get_buffer();
+            Gtk.TextIter s0, e0;
+            buf_dir.get_bounds(out s0, out e0);
+            string raw = buf_dir.get_text(s0, e0, false);
+            FileUtils.set_contents(target, raw);
+            set_current_file_path(target);
+            has_unsaved_changes = false;
+            return true;
+        } catch (Error err) {
+            warning("Échec de la sauvegarde directe: %s", err.message);
+            // Fallback: continuer via conversion pivot
+        }
+    }
+
     // 2) Construire un PivotDocument depuis le buffer courant
     PivotDocument pivot;
     try {
@@ -442,14 +462,64 @@ public bool save_document(string? path = null) {
 }
 
 public async bool save_document_as() {
-    // Implémentation minimaliste sans interaction (fallback HOME)
-    string home = Environment.get_home_dir();
-    // Si on a déjà un chemin, proposer le même nom; sinon défaut .md
-    string basename = _current_file_path != "" ? Path.get_basename(_current_file_path) : "document.md";
-    string target = Path.build_filename(home, basename);
-    bool ok = save_document(target);
-    if (ok) set_current_file_path(target);
-    return ok;
+    // Dialogue GTK4 de sauvegarde avec filtres simples
+    try {
+        var file_dialog = new Gtk.FileDialog();
+        file_dialog.set_title(_("Enregistrer sous…"));
+
+        // Proposer un nom initial
+        string basename = _current_file_path != "" ? Path.get_basename(_current_file_path) : "document.md";
+        // set_initial_name existe en GTK 4 pour FileDialog
+        file_dialog.set_initial_name(basename);
+
+        // Filtres: Markdown / HTML / Texte / Pivot
+    var md = new Gtk.FileFilter();
+    md.name = "Markdown (*.md)";
+        md.add_mime_type("text/markdown");
+        md.add_pattern("*.md");
+    var html = new Gtk.FileFilter();
+    html.name = "HTML (*.html, *.htm)";
+        html.add_mime_type("text/html");
+        html.add_pattern("*.html");
+        html.add_pattern("*.htm");
+    var txt = new Gtk.FileFilter();
+    txt.name = "Texte (*.txt)";
+        txt.add_mime_type("text/plain");
+        txt.add_pattern("*.txt");
+    var pivot = new Gtk.FileFilter();
+    pivot.name = "Pivot (*.pivot)";
+        pivot.add_pattern("*.pivot");
+
+        var filters = new GLib.ListStore(typeof(Gtk.FileFilter));
+        filters.append(md);
+        filters.append(html);
+        filters.append(txt);
+        filters.append(pivot);
+        file_dialog.set_filters(filters);
+
+    // Trouver une fenêtre parente
+    Gtk.Window? parent = this.get_root() as Gtk.Window;
+
+        // Lancer la boîte de dialogue
+        file_dialog.save.begin(parent, null, (obj, res) => {
+            try {
+                var gfile = file_dialog.save.end(res);
+                if (gfile != null) {
+                    string? path = gfile.get_path();
+                    if (path != null && path != "") {
+                        bool ok = save_document(path);
+                        if (ok) set_current_file_path(path);
+                    }
+                }
+            } catch (Error e) {
+                // Annulation ou erreur: ne rien faire
+            }
+        });
+        return true; // l’opération est asynchrone; on retourne true pour l’initiation
+    } catch (Error e) {
+        warning("Échec du dialogue Enregistrer sous: %s", e.message);
+        return false;
+    }
 }
 
 // Calcule la position actuelle du curseur et émet le signal

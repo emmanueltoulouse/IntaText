@@ -282,6 +282,31 @@ private void add_page_editor() {
     editor_group.add(wrap_lines_row);
 
     editor_page.add(editor_group);
+
+    // Groupe Markdown — style des titres (ATX / Setext)
+    var markdown_group = new Adw.PreferencesGroup();
+    markdown_group.set_title(_("Markdown"));
+
+    var md_heading_row = new Adw.ActionRow();
+    md_heading_row.set_title(_("Style des titres Markdown"));
+
+    // Liste des choix et dropdown
+    var md_heading_list = new Gtk.StringList({ "ATX ( #, ##, ### )", "Setext ( ====, ---- )" });
+    var md_heading_dropdown = new Gtk.DropDown(md_heading_list, null);
+
+    // Lecture/écriture via GSettings (schéma com.cabineteto.IntaText)
+    var md_settings = new GLib.Settings("com.cabineteto.IntaText");
+    string current_style = md_settings.get_string("markdown-heading-style");
+    if (current_style == "setext") {
+        md_heading_dropdown.set_selected(1);
+    } else {
+        md_heading_dropdown.set_selected(0);
+    }
+
+    md_heading_row.add_suffix(md_heading_dropdown);
+    markdown_group.add(md_heading_row);
+
+    editor_page.add(markdown_group);
     add(editor_page);
 
     // Connecter les signaux
@@ -293,6 +318,12 @@ private void add_page_editor() {
     wrap_lines_switch.notify["active"].connect(() => {
                 config.set_boolean("Editor", "wrap_lines", wrap_lines_switch.active);
                 config.save();
+            });
+
+    // Persister le style des titres Markdown dans GSettings
+    md_heading_dropdown.notify["selected"].connect(() => {
+                var sel = (int) md_heading_dropdown.get_selected();
+                md_settings.set_string("markdown-heading-style", sel == 1 ? "setext" : "atx");
             });
 }
 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="com.cabineteto.IntaText" path="/com/cabineteto/IntaText/">
+    <key name="markdown-heading-style" type="s">
+      <default>'atx'</default>
+      <summary>Style des titres Markdown</summary>
+      <description>
+        Contrôle la forme des titres Markdown à l'export:
+        - 'atx' (défaut): #, ##, ### ...
+        - 'setext': H1 et H2 en style Setext (==== et ----), H3+ restent en ATX.
+      </description>
+    </key>
+  </schema>
+
+</schemalist>
