@@ -17,8 +17,13 @@ private Gtk.TextTag tag_strikethrough;
 private Gtk.TextTag tag_link;
 private Gtk.TextTag tag_list;
 private Gtk.TextTag tag_underline;
+private Gtk.TextTag tag_image;
 
 private Gtk.CssProvider css_provider;
+// Registre local des noms de tags dynamiques créés (pour retrouver href/src/alt)
+private Gee.ArrayList<string> link_tag_names = new Gee.ArrayList<string>();
+private Gee.ArrayList<string> image_src_tag_names = new Gee.ArrayList<string>();
+private Gee.ArrayList<string> image_alt_tag_names = new Gee.ArrayList<string>();
 
 public signal void document_changed(PivotDocument doc);
 public signal void buffer_changed();
@@ -92,11 +97,18 @@ private void ensure_tags() {
 
     // Link
     tag_link = (Gtk.TextTag) table.lookup("link");
-    if (tag_link == null) tag_link = buffer.create_tag("link", "underline", Pango.Underline.SINGLE, "foreground", "#0066cc");
+    if (tag_link == null) {
+        tag_link = buffer.create_tag("link", "underline", Pango.Underline.SINGLE, "foreground", "#0066cc");
+        // pas de propriété standard pour stocker l'URL; on utilisera attributes dynamiques via set_data
+    }
 
     // List
     tag_list = (Gtk.TextTag) table.lookup("list");
     if (tag_list == null) tag_list = buffer.create_tag("list", "indent", 12);
+
+    // Image (marqueur générique)
+    tag_image = (Gtk.TextTag) table.lookup("image");
+    if (tag_image == null) tag_image = buffer.create_tag("image");
 }
 
 // Exemple d'utilisation sécurisée d'un tag
@@ -465,7 +477,16 @@ public void insert_link(string url, string text) {
 
     buffer.apply_tag(tag_link, start, iter);
 
-    // Stocker l'URL pour le lien (pourrait être fait avec les données utilisateur du tag)
+    // Stocker l'URL pour le lien aux itérateurs via marque
+    // Astuce: créer un tag spécifique portant l'URL comme nom unique
+    // (table de tags exige unicité). Préfixe pour éviter collisions.
+    // Encoder l'URL directement dans le nom du tag (échappée URI)
+    string enc = GLib.Uri.escape_string(url, null, false);
+    string unique = "link::u:" + enc;
+    Gtk.TextTag url_tag = (Gtk.TextTag) buffer.get_tag_table().lookup(unique);
+    if (url_tag == null) url_tag = buffer.create_tag(unique);
+    buffer.apply_tag(url_tag, start, iter);
+    if (!link_tag_names.contains(unique)) link_tag_names.add(unique);
 
     // Supprimer le marqueur
     buffer.delete_mark(link_start);
@@ -481,8 +502,29 @@ public void insert_image(string path, string alt_text) {
     TextIter iter;
     buffer.get_iter_at_mark(out iter, buffer.get_insert());
 
-    // Pour l'instant, insérer juste une représentation textuelle
-    buffer.insert(ref iter, "[Image: " + alt_text + "]", -1);
+    // Insérer un placeholder textuel lisible
+    string placeholder = alt_text != null && alt_text.strip() != "" ? alt_text : GLib.Path.get_basename(path);
+    if (placeholder == null || placeholder == "") placeholder = "Image";
+
+    TextMark img_start = buffer.create_mark(null, iter, true);
+    buffer.insert(ref iter, placeholder, -1);
+    TextIter start;
+    buffer.get_iter_at_mark(out start, img_start);
+    buffer.delete_mark(img_start);
+    // Appliquer un tag dédié image pour repérage
+    // Appliquer tag générique image
+    buffer.apply_tag(tag_image, start, iter);
+    // Tags de données pour stocker src/alt sous forme de noms encodés
+    string enc_src = GLib.Uri.escape_string(path, null, false);
+    Gtk.TextTag src_tag = (Gtk.TextTag) buffer.get_tag_table().lookup("image-src::u:" + enc_src);
+    if (src_tag == null) src_tag = buffer.create_tag("image-src::u:" + enc_src);
+    buffer.apply_tag(src_tag, start, iter);
+    string src_name = "image-src::u:" + enc_src; if (!image_src_tag_names.contains(src_name)) image_src_tag_names.add(src_name);
+    string enc_alt = GLib.Uri.escape_string(alt_text ?? "", null, false);
+    Gtk.TextTag alt_tag = (Gtk.TextTag) buffer.get_tag_table().lookup("image-alt::u:" + enc_alt);
+    if (alt_tag == null) alt_tag = buffer.create_tag("image-alt::u:" + enc_alt);
+    buffer.apply_tag(alt_tag, start, iter);
+    string alt_name = "image-alt::u:" + enc_alt; if (!image_alt_tag_names.contains(alt_name)) image_alt_tag_names.add(alt_name);
 
     // Note: Une implémentation complète nécessiterait d'utiliser GtkTextChildAnchor
     // pour insérer un widget d'image dans le TextView
@@ -612,7 +654,7 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             // Supprimer la marque du paragraphe
             buffer.delete_mark(para_start);
         }
-        else if (node is PivotList) {
+    else if (node is PivotList) {
             var list = (PivotList)node;
             // Début de plage de liste
             TextMark list_start = buffer.create_mark(null, iter, true);
@@ -622,6 +664,44 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.get_iter_at_mark(out list_begin_iter, list_start);
             buffer.apply_tag(tag_list, list_begin_iter, iter);
             buffer.delete_mark(list_start);
+        }
+    else if (node is PivotLink) {
+            var pl = (PivotLink) node;
+            TextMark lmk = buffer.create_mark(null, iter, true);
+            buffer.insert(ref iter, pl.text ?? pl.href ?? "", -1);
+            TextIter s;
+            buffer.get_iter_at_mark(out s, lmk);
+            buffer.apply_tag(tag_link, s, iter);
+            // attacher un tag unique pour href
+            string enc = GLib.Uri.escape_string(pl.href ?? "", null, false);
+            string unique = "link::u:" + enc;
+            Gtk.TextTag url_tag = (Gtk.TextTag) buffer.get_tag_table().lookup(unique);
+            if (url_tag == null) url_tag = buffer.create_tag(unique);
+            buffer.apply_tag(url_tag, s, iter);
+            if (!link_tag_names.contains(unique)) link_tag_names.add(unique);
+            buffer.delete_mark(lmk);
+            buffer.insert(ref iter, "\n\n", -1);
+        }
+        else if (node is PivotImage) {
+            var pi = (PivotImage) node;
+            string placeholder = (pi.alt != null && pi.alt != "") ? pi.alt : (pi.src != null ? GLib.Path.get_basename(pi.src) : "Image");
+            TextMark im = buffer.create_mark(null, iter, true);
+            buffer.insert(ref iter, placeholder, -1);
+            TextIter s;
+            buffer.get_iter_at_mark(out s, im);
+            buffer.apply_tag(tag_image, s, iter);
+            string encs = GLib.Uri.escape_string(pi.src ?? "", null, false);
+            Gtk.TextTag src_tag = (Gtk.TextTag) buffer.get_tag_table().lookup("image-src::u:" + encs);
+            if (src_tag == null) src_tag = buffer.create_tag("image-src::u:" + encs);
+            buffer.apply_tag(src_tag, s, iter);
+            string srcn = "image-src::u:" + encs; if (!image_src_tag_names.contains(srcn)) image_src_tag_names.add(srcn);
+            string enca = GLib.Uri.escape_string(pi.alt ?? "", null, false);
+            Gtk.TextTag alt_tag = (Gtk.TextTag) buffer.get_tag_table().lookup("image-alt::u:" + enca);
+            if (alt_tag == null) alt_tag = buffer.create_tag("image-alt::u:" + enca);
+            buffer.apply_tag(alt_tag, s, iter);
+            string altn = "image-alt::u:" + enca; if (!image_alt_tag_names.contains(altn)) image_alt_tag_names.add(altn);
+            buffer.delete_mark(im);
+            buffer.insert(ref iter, "\n\n", -1);
         }
         else if (node is PivotCodeBlock) {
             var code = (PivotCodeBlock)node;
@@ -757,7 +837,7 @@ private void insert_segment_with_html_underline(ref TextIter iter, TextSegment s
         }
         // Contenu à souligner
         string under = txt.substring(open + 3, close - (open + 3));
-        insert_run_with_formats(ref iter, under, segment, true);
+    insert_run_with_formats(ref iter, under, segment, true);
         pos = close + 4; // après </u>
     }
 }
@@ -792,6 +872,16 @@ private void insert_run_with_formats(ref TextIter iter, string run_text, TextSeg
     if (segment.has_format(TextFormatting.STRIKETHROUGH)) buffer.apply_tag(tag_strikethrough, start, iter);
     if (segment.has_format(TextFormatting.CODE)) buffer.apply_tag(tag_code, start, iter);
     if (segment.has_format(TextFormatting.UNDERLINE) || add_underline) buffer.apply_tag(tag_underline, start, iter);
+    if (segment.link_href != null && segment.link_href.strip() != "") {
+        // Appliquer style lien + tag URL
+        buffer.apply_tag(tag_link, start, iter);
+        string enc = GLib.Uri.escape_string(segment.link_href, null, false);
+        string unique = "link::u:" + enc;
+        Gtk.TextTag url_tag = (Gtk.TextTag) buffer.get_tag_table().lookup(unique);
+        if (url_tag == null) url_tag = buffer.create_tag(unique);
+        buffer.apply_tag(url_tag, start, iter);
+    if (!link_tag_names.contains(unique)) link_tag_names.add(unique);
+    }
 }
 
 /**
@@ -827,9 +917,53 @@ public PivotDocument get_pivot_document() {
         if (start_it.get_buffer() != buffer || end_it.get_buffer() != buffer) { in_paragraph = false; return; }
         string txt = buffer.get_text(start_it, end_it, false).strip();
         if (txt.length > 0) {
-            var para = new PivotParagraph();
-            para.segments = extract_formatted_segments(txt, start_it, end_it);
-            doc.children.add(para);
+            // Si l'intégralité de la ligne (ou plage) est taguée lien, produire un PivotLink
+            Gtk.TextIter s = start_it; Gtk.TextIter e = end_it;
+            bool whole_is_link = true;
+            Gtk.TextIter it = s;
+            while (it.compare(e) < 0) {
+                if (!it.has_tag(tag_link)) { whole_is_link = false; break; }
+                if (!it.forward_char()) break;
+            }
+            if (whole_is_link) {
+                // Trouver l'URL associée via registre
+                string? href = null;
+                foreach (var name in link_tag_names) {
+                    var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+                    if (t != null && range_has_tag(s, e, t)) {
+                        string enc = name.substring("link::u:".length);
+                        href = GLib.Uri.unescape_string(enc);
+                        break;
+                    }
+                }
+                var link = new PivotLink(); link.text = txt; link.href = href ?? txt;
+                doc.children.add(link);
+            } else if (s.has_tag(tag_image)) {
+                // Image: récupérer src et alt depuis tags nommés (registre)
+                string? src = null; string? alt = txt;
+                foreach (var name in image_src_tag_names) {
+                    var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+                    if (t != null && range_has_tag(s, e, t)) {
+                        string enc = name.substring("image-src::u:".length);
+                        src = GLib.Uri.unescape_string(enc);
+                        break;
+                    }
+                }
+                foreach (var name in image_alt_tag_names) {
+                    var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+                    if (t != null && range_has_tag(s, e, t)) {
+                        string enc = name.substring("image-alt::u:".length);
+                        alt = GLib.Uri.unescape_string(enc);
+                        break;
+                    }
+                }
+                var pi = new PivotImage(); pi.alt = alt ?? ""; pi.src = src ?? "";
+                doc.children.add(pi);
+            } else {
+                var para = new PivotParagraph();
+                para.segments = extract_formatted_segments(txt, start_it, end_it);
+                doc.children.add(para);
+            }
         }
         in_paragraph = false;
     }
@@ -1110,9 +1244,9 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
 
         TextIter segment_end = current;
         // Inclure underline dans la détection pour découper correctement
-        bool has_tag = segment_end.has_tag(tag_bold) || segment_end.has_tag(tag_italic) ||
+    bool has_tag = segment_end.has_tag(tag_bold) || segment_end.has_tag(tag_italic) ||
                        segment_end.has_tag(tag_strikethrough) || segment_end.has_tag(tag_code) ||
-                       segment_end.has_tag(tag_underline);
+               segment_end.has_tag(tag_underline) || segment_end.has_tag(tag_link);
 
         // Avancer caractère par caractère jusqu'à un changement de format ou la fin du paragraphe
         int safety_counter = 0;
@@ -1123,7 +1257,7 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
 
             bool current_has_tag = segment_end.has_tag(tag_bold) || segment_end.has_tag(tag_italic) ||
                                    segment_end.has_tag(tag_strikethrough) || segment_end.has_tag(tag_code) ||
-                                   segment_end.has_tag(tag_underline);
+                                   segment_end.has_tag(tag_underline) || segment_end.has_tag(tag_link);
 
             // Si le formatage change, arrêter
             if (has_tag != current_has_tag) {
@@ -1146,7 +1280,7 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
         string segment_text = buffer.get_text(current, segment_end, false);
 
         // Détecter le formatage appliqué
-        var formats = new Gee.HashSet<TextFormatting>();
+    var formats = new Gee.HashSet<TextFormatting>();
     if (current.has_tag(tag_bold))
             formats.add(TextFormatting.BOLD);
         if (current.has_tag(tag_italic))
@@ -1159,8 +1293,33 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
     if (current.has_tag(tag_underline))
             formats.add(TextFormatting.UNDERLINE);
 
+        // Détecter liens/images en parcourant les tags appliqués à 'current'
+        string? link_href = null;
+        if (current.has_tag(tag_link)) {
+            // Chercher un tag au nom "link::..." couvrant cette position
+            var table = buffer.get_tag_table();
+            // Itération grossière: on ne peut pas lister depuis une position, alors on reconstitue par heuristique
+            // Simplification: retrouver la chaîne potentielle entre crochets n'existe pas; on associe à l’URL par tag unique
+            // Nous allons scanner tous les tags du tableau dont le nom commence par "link::" et tester une courte plage
+            // Pour éviter O(n^2), on accepte ce coût car le nombre de tags reste modeste dans un éditeur.
+            // NB: Gtk.TextTagTable n'offre pas itération en Vala directement; on s'abstient et estimons en reformatting à l'insertion/rendu.
+        }
+
         // Créer le segment
-        segments.add(new TextSegment(segment_text, formats));
+        var seg = new TextSegment(segment_text, formats);
+        if (current.has_tag(tag_link)) {
+            string? found = null;
+            foreach (var name in link_tag_names) {
+                var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+                if (t != null && current.has_tag(t)) {
+                    string enc = name.substring("link::u:".length);
+                    found = GLib.Uri.unescape_string(enc);
+                    break;
+                }
+            }
+            seg.link_href = found;
+        }
+        segments.add(seg);
 
         // Passer au segment suivant
         current = segment_end;
@@ -1174,6 +1333,16 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
     }
 
     return segments;
+}
+
+// Détecte si une plage contient un tag donné
+private bool range_has_tag(Gtk.TextIter start, Gtk.TextIter end, Gtk.TextTag tag) {
+    Gtk.TextIter it = start;
+    while (it.compare(end) < 0) {
+        if (it.has_tag(tag)) return true;
+        if (!it.forward_char()) break;
+    }
+    return false;
 }
 
 /**

@@ -46,9 +46,30 @@ public PivotDocument to_pivot(string content, string path) {
     void flush_paragraph() {
         var text = para_buf.str.strip();
         if (text.length > 0) {
-            var para = new PivotParagraph();
-            para.segments = parse_inline_formatting(text);
-            pivot.children.add(para);
+            // Détection d'une ligne qui est uniquement un lien ou image Markdown comme bloc isolé
+            // Cas image seul
+            string t = text.strip();
+            if (t.has_prefix("![")) {
+                var img = try_parse_image_inline(t);
+                if (img != null) pivot.children.add(img);
+                else {
+                    var para = new PivotParagraph();
+                    para.segments = parse_inline_formatting(text);
+                    pivot.children.add(para);
+                }
+            } else if (t.has_prefix("[")) {
+                var lnk = try_parse_link_inline(t);
+                if (lnk != null) pivot.children.add(lnk);
+                else {
+                    var para = new PivotParagraph();
+                    para.segments = parse_inline_formatting(text);
+                    pivot.children.add(para);
+                }
+            } else {
+                var para = new PivotParagraph();
+                para.segments = parse_inline_formatting(text);
+                pivot.children.add(para);
+            }
         }
         para_buf.truncate(0);
     }
@@ -256,7 +277,7 @@ public PivotDocument to_pivot(string content, string path) {
             continue;
         }
 
-        // Paragraphe standard: accumuler
+    // Paragraphe standard: accumuler
         para_buf.append(raw + "\n");
         i++;
     }
@@ -323,17 +344,44 @@ private string apply_heading_style(string md, string style) {
 }
 
 private Gee.List<TextSegment> parse_inline_formatting(string text) {
-    return parse_inline_recursive(text, new Gee.HashSet<TextFormatting>());
+    return parse_inline_recursive_with_links(text, new Gee.HashSet<TextFormatting>());
 }
 
-private Gee.List<TextSegment> parse_inline_recursive(string text, Gee.HashSet<TextFormatting> active_formats) {
+private PivotLink? try_parse_link_inline(string t) {
+    // [text](href)
+    int o = t.index_of("["); int c = t.index_of("]");
+    int p = t.index_of("("); int q = t.last_index_of(")");
+    if (o == 0 && c > o && p == c + 1 && q > p) {
+        var link = new PivotLink();
+        link.text = t.substring(o + 1, c - (o + 1));
+        link.href = t.substring(p + 1, q - (p + 1));
+        return link;
+    }
+    return null;
+}
+
+private PivotImage? try_parse_image_inline(string t) {
+    // ![alt](src)
+    if (!t.has_prefix("!")) return null;
+    int o = t.index_of("["); int c = t.index_of("]");
+    int p = t.index_of("("); int q = t.last_index_of(")");
+    if (o == 1 && c > o && p == c + 1 && q > p) {
+        var img = new PivotImage();
+        img.alt = t.substring(o + 1, c - (o + 1));
+        img.src = t.substring(p + 1, q - (p + 1));
+        return img;
+    }
+    return null;
+}
+
+private Gee.List<TextSegment> parse_inline_recursive_with_links(string text, Gee.HashSet<TextFormatting> active_formats) {
     var segments = new Gee.ArrayList<TextSegment>();
     int i = 0;
     while (i < text.length) {
         // Cherche le prochain marqueur
         int next = text.length;
         string? found_marker = null;
-        string[] markers = { "**", "*", "~~", "`", "__" };          // Ajout de __ pour soulignement
+        string[] markers = { "**", "*", "~~", "`", "__", "[", "!" };
         foreach (var marker in markers) {
             int idx = text.index_of(marker, i);
             if (idx != -1 && idx < next) {
@@ -359,7 +407,39 @@ private Gee.List<TextSegment> parse_inline_recursive(string text, Gee.HashSet<Te
             segments.add(new TextSegment(text.substring(i, next - i), copy));
         }
 
-        // Chercher la fin du marqueur
+        // Gestion spéciale des liens/images
+        if (found_marker == "[" || found_marker == "!") {
+            bool is_img = (found_marker == "!") && next + 1 < text.length && text[next + 1] == '[';
+            int o = next + (is_img ? 1 : 0);
+            int c = text.index_of("]", o + 1);
+            if (c != -1 && c + 1 < text.length && text[c + 1] == '(') {
+                int p = c + 1;
+                int q = text.index_of(")", p + 1);
+                if (q != -1) {
+                    string label = text.substring(o + 1, c - (o + 1));
+                    string target = text.substring(p + 2, q - (p + 2));
+                    if (is_img) {
+                        // Image => pas de segment texte; cela devrait idéalement être un nœud bloc, mais si inline, on garde alt comme texte
+                        var copy = new Gee.HashSet<TextFormatting>();
+                        copy.add_all(active_formats);
+                        var seg = new TextSegment(label, copy);
+                        // Pas de link_href pour image
+                        segments.add(seg);
+                    } else {
+                        var copy = new Gee.HashSet<TextFormatting>();
+                        copy.add_all(active_formats);
+                        var seg = new TextSegment(label, copy);
+                        seg.link_href = target;
+                        segments.add(seg);
+                    }
+                    i = q + 1;
+                    continue;
+                }
+            }
+            // Si la structure n'est pas complète, traiter comme texte brut
+        }
+
+        // Chercher la fin du marqueur (emphase/code)
         int close = text.index_of(found_marker, next + found_marker.length);
         if (close == -1) {
             // Pas de fin de marqueur, considérer le reste comme texte brut
@@ -374,7 +454,7 @@ private Gee.List<TextSegment> parse_inline_recursive(string text, Gee.HashSet<Te
         new_formats.add_all(active_formats);
 
         // IMPORTANT: Détecter correctement le format
-        switch (found_marker) {
+    switch (found_marker) {
         case "**": new_formats.add(TextFormatting.BOLD); break;
         case "*": new_formats.add(TextFormatting.ITALIC); break;
         case "~~": new_formats.add(TextFormatting.STRIKETHROUGH); break;
@@ -388,7 +468,7 @@ private Gee.List<TextSegment> parse_inline_recursive(string text, Gee.HashSet<Te
         segments.add(new TextSegment(content_between, new_formats));
 
         // Avancer après le marqueur de fin
-        i = close + found_marker.length;
+    i = close + found_marker.length;
     }
     return segments;
 }

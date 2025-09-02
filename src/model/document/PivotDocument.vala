@@ -220,6 +220,8 @@ public new static PivotHeading from_json(Json.Object node) throws Error {
 public class TextSegment : GLib.Object {
 public string text;
 public Gee.HashSet<TextFormatting> formats;
+// Optionnel: lien associé à ce segment (href). Null si non-lié.
+public string? link_href;
 
 public TextSegment(string text, Gee.HashSet<TextFormatting>? formats = null){
     this.text = text;
@@ -237,6 +239,10 @@ public string to_markdown(){
     if (has_format(TextFormatting.BOLD)) result = "**" + result + "**";
     if (has_format(TextFormatting.ITALIC)) result = "*" + result + "*";
     if (has_format(TextFormatting.UNDERLINE)) result = "__" + result + "__";          // Convention Markdown pour souligné
+    // Encapsuler dans un lien si présent
+    if (link_href != null && link_href.strip() != "") {
+        result = "[" + result + "](" + link_href + ")";
+    }
     return result;
 }
 
@@ -248,6 +254,7 @@ public Json.Object to_json(){
         formats_array.add_string_element(format.to_string());
     }
     obj.set_array_member("formats", formats_array);
+    if (link_href != null && link_href != "") obj.set_string_member("link", link_href);
     return obj;
 }
 
@@ -270,6 +277,7 @@ public static TextSegment from_json(Json.Object node) throws Error {
             }
         }
     }
+    if (node.has_member("link")) segment.link_href = node.get_string_member("link");
     return segment;
 }
 }
