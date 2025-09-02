@@ -36,6 +36,9 @@ private GLib.Queue<string> cache_keys = new GLib.Queue<string>();
 private const int MAX_RECENT_LOCATIONS = 10;
 private const int MAX_CACHE_ENTRIES = 20;
 
+// Garde de réentrance pour les favoris
+private bool _bookmarks_updating = false;
+
 // Option pour le fil d'Ariane
 private bool _breadcrumb_enabled = true;
 public bool breadcrumb_enabled {
@@ -123,7 +126,11 @@ public ExplorerModel(ApplicationController controller) {
 
     // S'abonner aux changements des favoris et de l'historique
     bookmarks_manager.bookmarks_changed.connect(() => {
-                update_bookmarks();
+                // Réagir aux changements (ex. Nautilus modifie le fichier) sans reboucler
+                if (_bookmarks_updating) return;
+                _bookmarks_updating = true;
+                bookmarks_manager.refresh_bookmarks(false); // recharge mais n'émet pas à nouveau
+                _bookmarks_updating = false;
             });
 
     history_manager.history_changed.connect(() => {
@@ -196,7 +203,10 @@ public Gee.List<File> get_bookmarks() {
 }
 
 public void update_bookmarks() {
+    if (_bookmarks_updating) return;
+    _bookmarks_updating = true;
     bookmarks_manager.refresh_bookmarks();
+    _bookmarks_updating = false;
 }
 
 public void add_to_history(File file) {

@@ -132,9 +132,9 @@ private void save_bookmarks() {
     }
 }
 
-public void refresh_bookmarks() {
+public void refresh_bookmarks(bool emit_signal = true) {
     load_bookmarks();
-    bookmarks_changed();
+    if (emit_signal) bookmarks_changed();
 }
 
 // --- Implémentation ---
@@ -241,4 +241,5 @@ private static bool files_equal(File a, File b) {
     // Fallback: GIO equality (peut impliquer I/O selon backend)
     try { return a.equal(b); } catch (Error e) { return false; }
 }
+
 }

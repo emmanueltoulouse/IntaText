@@ -342,12 +342,21 @@ private void create_file_list() {
 
                 var icon = new Image();
                 icon.set_pixel_size(24);
+    icon.set_data("type", "icon");
                 box.append(icon);
 
                 var name_label = new Label("");
                 name_label.set_halign(Align.START);
                 name_label.set_hexpand(true);
+    name_label.set_data("type", "name");
                 box.append(name_label);
+
+    // Séparateur masqué par défaut pour les lignes spéciales
+    var sep = new Separator(Orientation.HORIZONTAL);
+    sep.set_hexpand(true);
+    sep.set_visible(false);
+    sep.set_data("type", "sep");
+    box.append(sep);
 
                 list_item.set_child(box);
             });
@@ -365,16 +374,28 @@ private void create_file_list() {
                 // Trouver l'icône et le label
                 unowned Image? icon = null;
                 unowned Label? name_label = null;
+                unowned Separator? sep = null;
 
                 unowned Widget? child = box.get_first_child();
                 while (child != null) {
-                    if (child is Image) {
-                        icon = child as Image;
-                    }
-                    else if (child is Label) {
-                        name_label = child as Label;
-                    }
+                    var t = child.get_data<string>("type");
+                    if (t == "icon") icon = child as Image;
+                    else if (t == "name") name_label = child as Label;
+                    else if (t == "sep") sep = child as Separator;
                     child = child.get_next_sibling();
+                }
+
+                // Gérer les éléments spéciaux (séparateur)
+                var special = file_item != null ? file_item.get_metadata("special") : null;
+                if (special == "separator") {
+                    if (icon != null) icon.set_visible(false);
+                    if (name_label != null) name_label.set_visible(false);
+                    if (sep != null) sep.set_visible(true);
+                    return;
+                } else {
+                    if (sep != null) sep.set_visible(false);
+                    if (icon != null) icon.set_visible(true);
+                    if (name_label != null) name_label.set_visible(true);
                 }
 
                 // Mettre à jour l'icône
@@ -390,13 +411,15 @@ private void create_file_list() {
                     }
                 }
 
-                // Mettre à jour le nom
+                // Mettre à jour le nom (★ pour favoris)
                 if (name_label != null && file_item != null) {
+                    string display = file_item.name;
+                    if (special == "favorite") display = "★ " + display;
                     if (file_item.is_directory()) {
-                        name_label.set_markup("<b>" + GLib.Markup.escape_text(file_item.name) + "</b>");
+                        name_label.set_markup("<b>" + GLib.Markup.escape_text(display) + "</b>");
                     }
                     else {
-                        name_label.set_text(file_item.name);
+                        name_label.set_text(display);
                     }
                 }
             });
@@ -413,6 +436,9 @@ private void create_file_list() {
 
                 var file_item = selection.get_selected_item() as FileItemModel;
                 if (file_item == null) return;
+
+                // Ignorer la ligne séparateur
+                if (file_item.get_metadata("special") == "separator") return;
 
                 if (file_item.is_directory()) {
                     current_path = file_item.path;
@@ -462,6 +488,31 @@ private void refresh_directory_content() {
 
     // Mettre à jour la liste
     list_store.remove_all();
+
+    // Injecter les favoris (si modèle disponible)
+    if (model != null) {
+        var favorites_files = model.get_bookmarks();
+        foreach (var fav in favorites_files) {
+            try {
+                var info = fav.query_info("standard::*,time::modified,unix::mode", FileQueryInfoFlags.NONE);
+                var path = fav.get_path();
+                if (path == null) continue; // ignorer non-local ici
+                var fitem = new FileItemModel.from_file_info(path, info);
+                fitem.set_metadata("special", "favorite");
+                list_store.append(fitem);
+            } catch (Error e) {
+                // ignore
+            }
+        }
+        if (favorites_files.size > 0) {
+            var sep_item = new FileItemModel();
+            sep_item.name = "";
+            sep_item.path = current_path;
+            sep_item.file_type = FileType.UNKNOWN;
+            sep_item.set_metadata("special", "separator");
+            list_store.append(sep_item);
+        }
+    }
 
     // Trier les items (dossiers d'abord, puis alphabétiquement)
     items.sort((a, b) => {
@@ -799,6 +850,13 @@ private void on_setup_listitem(Object object) {
     box.append(icon);
     box.append(name_label);
 
+    // Ajoute un séparateur, masqué par défaut, pour les lignes spéciales
+    var sep = new Separator(Orientation.HORIZONTAL);
+    sep.set_hexpand(true);
+    sep.set_visible(false);
+    sep.set_data("type", "sep");
+    box.append(sep);
+
     list_item.set_child(box);
 }
 
@@ -815,6 +873,7 @@ private void on_bind_listitem(Object object) {
     // Trouver les widgets par leur donnée associée en utilisant get_first_child et get_next_sibling
     Gtk.Image? icon = null;
     Label? name_label = null;
+    Separator? sep = null;
 
     var child = box.get_first_child();
     while (child != null) {
@@ -824,7 +883,23 @@ private void on_bind_listitem(Object object) {
         else if (child.get_data<string>("type") == "name") {
             name_label = child as Label;
         }
+        else if (child.get_data<string>("type") == "sep") {
+            sep = child as Separator;
+        }
         child = child.get_next_sibling();
+    }
+
+    // Lignes spéciales: séparateur
+    var special = file_item.get_metadata("special");
+    if (special == "separator") {
+        if (icon != null) icon.set_visible(false);
+        if (name_label != null) name_label.set_visible(false);
+        if (sep != null) sep.set_visible(true);
+        return; // Rien d'autre à lier
+    } else {
+        if (sep != null) sep.set_visible(false);
+        if (icon != null) icon.set_visible(true);
+        if (name_label != null) name_label.set_visible(true);
     }
 
     // Mettre à jour l'icône
@@ -840,14 +915,17 @@ private void on_bind_listitem(Object object) {
         }
     }
 
-    // Mettre à jour le nom
+    // Mettre à jour le nom (ajoute une étoile pour les favoris)
     if (name_label != null) {
-        if (file_item.is_directory()) {
-            // Rendre le texte en gras pour les dossiers
-            name_label.set_markup("<b>" + GLib.Markup.escape_text(file_item.name) + "</b>");
+        string display = file_item.name ?? "";
+        bool is_dir = file_item.is_directory();
+        if (special == "favorite") {
+            display = "★ " + display;
         }
-        else {
-            name_label.set_text(file_item.name);
+        if (is_dir) {
+            name_label.set_markup("<b>" + GLib.Markup.escape_text(display) + "</b>");
+        } else {
+            name_label.set_text(display);
         }
     }
 }
@@ -1003,6 +1081,11 @@ private void on_item_activated(uint position) {
         return;
     }
 
+    // Ignorer les éléments spéciaux (séparateur)
+    if (file_item.get_metadata("special") == "separator") {
+        return;
+    }
+
     // trace supprimée
 
     if (file_item.is_directory()) {
@@ -1068,6 +1151,9 @@ private void on_right_click(int n_press, double x, double y) {
 
     var file_item = selection.get_selected_item() as FileItemModel;
     if (file_item == null) return;
+
+    // Pas de menu contextuel pour les éléments spéciaux
+    if (file_item.get_metadata("special") == "separator") return;
 
     // Créer le menu
     var menu = new PopoverMenu.from_model(build_context_menu(file_item));
@@ -1257,12 +1343,39 @@ private void on_selection_changed(uint position, uint n_items) {
 private void load_directory_content() {
     var explorer_model = ApplicationControllerExtension.get_explorer_model(controller);
     if (explorer_model != null) {
-        // Le modèle get_directory_content ne devrait PAS filtrer les fichiers cachés lui-même.
-        // Il retourne tous les fichiers, le filtrage se fait dans la VUE via filter_model.
+    // Forcer une actualisation des favoris (Nautilus + app)
+    explorer_model.update_bookmarks();
+        // Construire: Favoris (Nautilus+App) en premier, séparateur, puis contenu du dossier
+        var favorites_files = explorer_model.get_bookmarks(); // Gee.List<File>
         var items = explorer_model.get_directory_content(tab_model.current_path);
 
-        // Mettre à jour la liste (avant filtrage par filter_model)
         list_store.remove_all();
+
+        // 1) Injecter les favoris (dossiers uniquement) avec un marqueur spécial
+        foreach (var fav in favorites_files) {
+            try {
+                var info = fav.query_info("standard::*,time::modified,unix::mode", FileQueryInfoFlags.NONE);
+                var path = fav.get_path();
+                if (path == null) continue; // ignorer URI non locaux pour cette vue
+                var item = new FileItemModel.from_file_info(path, info);
+                item.set_metadata("special", "favorite");
+                list_store.append(item);
+            } catch (Error e) {
+                // ignorer les favoris invalides
+            }
+        }
+
+        // 2) Séparateur s'il y a des favoris
+        if (favorites_files.size > 0) {
+            var sep_item = new FileItemModel();
+            sep_item.name = "";
+            sep_item.path = tab_model.current_path; // valeur neutre
+            sep_item.file_type = FileType.UNKNOWN;
+            sep_item.set_metadata("special", "separator");
+            list_store.append(sep_item);
+        }
+
+        // 3) Éléments normaux du dossier
         foreach (var item in items) {
             list_store.append(item);
         }
