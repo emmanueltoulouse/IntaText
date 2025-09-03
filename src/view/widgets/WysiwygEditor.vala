@@ -849,7 +849,15 @@ private void render_list_to_buffer(PivotList l, ref TextIter iter, int level) {
     foreach (var it in l.items) {
         if (l.ordered) buffer.insert(ref iter, indent + "%d. ".printf(local++), -1);
         else buffer.insert(ref iter, indent + "• ", -1);
-        buffer.insert(ref iter, it.text ?? "", -1);
+        // Rendre les segments enrichis si disponibles
+        if (it.segments != null && it.segments.size > 0) {
+            foreach (var seg in it.segments) {
+                insert_segment_with_html_underline(ref iter, seg);
+            }
+        } else {
+            // Fallback compat: utiliser le texte brut
+            buffer.insert(ref iter, it.text ?? "", -1);
+        }
         buffer.insert(ref iter, "\n", -1);
         if (it.children != null && it.children.items.size > 0) {
             render_list_to_buffer(it.children, ref iter, level + 1);
@@ -1051,7 +1059,10 @@ public PivotDocument get_pivot_document() {
                 last2.children = nl2;
                 stacks.add(nl2);
             }
-            stacks.get(stacks.size - 1).items.add(new PivotListItem() { text = item_text });
+            // Construire des segments enrichis pour l'item à partir du buffer courant
+            var item = new PivotListItem();
+            item.segments = extract_inline_segments_from_text(item_text, line_start, line_end);
+            stacks.get(stacks.size - 1).items.add(item);
         }
         if (root.items.size > 0) doc.children.add(root);
         lines_accum.clear();
@@ -1171,6 +1182,74 @@ public PivotDocument get_pivot_document() {
     }
 
     return doc;
+}
+
+// Extrait des segments inline en se basant sur les tags appliqués dans la ligne courante
+private Gee.List<TextSegment> extract_inline_segments_from_text(string plain, TextIter line_start, TextIter line_end) {
+    var out = new Gee.ArrayList<TextSegment>();
+    if (plain == null || plain.length == 0) return out;
+    // On rebalaye les caractères dans la plage line_start..line_end et on reconstruit les runs
+    TextIter it = line_start;
+    TextIter run_start = it;
+    // État courant
+    bool b = false, i = false, s = false, c = false, u = false;
+    string? href = null;
+
+    string? current_href(TextIter a) {
+        foreach (var name in link_tag_names) {
+            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+            if (t != null && a.has_tag(t)) {
+                string enc = name.substring("link::u:".length);
+                return GLib.Uri.unescape_string(enc);
+            }
+        }
+        return null;
+    }
+    // helper pour comparer l'état
+    bool same_state(TextIter a, bool cb, bool ci, bool cs, bool cc, bool cu, string? ch) {
+        return a.has_tag(tag_bold) == cb && a.has_tag(tag_italic) == ci && a.has_tag(tag_strikethrough) == cs && a.has_tag(tag_code) == cc && a.has_tag(tag_underline) == cu && current_href(a) == ch;
+    }
+
+    // init état
+    b = it.has_tag(tag_bold); i = it.has_tag(tag_italic); s = it.has_tag(tag_strikethrough); c = it.has_tag(tag_code); u = it.has_tag(tag_underline); href = current_href(it);
+    run_start = it;
+    while (it.compare(line_end) < 0) {
+        TextIter next = it; if (!next.forward_char()) break;
+    bool nb = next.has_tag(tag_bold), ni = next.has_tag(tag_italic), ns = next.has_tag(tag_strikethrough), nc = next.has_tag(tag_code), nu = next.has_tag(tag_underline); string? nhref = current_href(next);
+        if (nb != b || ni != i || ns != s || nc != c || nu != u || nhref != href) {
+            string run = buffer.get_text(run_start, it, false);
+            if (run.length > 0) {
+                var fmts = new Gee.HashSet<TextFormatting>();
+                if (b) fmts.add(TextFormatting.BOLD);
+                if (i) fmts.add(TextFormatting.ITALIC);
+                if (s) fmts.add(TextFormatting.STRIKETHROUGH);
+                if (c) fmts.add(TextFormatting.CODE);
+                if (u) fmts.add(TextFormatting.UNDERLINE);
+                var seg = new TextSegment(run, fmts);
+                seg.link_href = href;
+                out.add(seg);
+            }
+            run_start = it;
+            b = nb; i = ni; s = ns; c = nc; u = nu; href = nhref;
+        }
+        it = next;
+    }
+    // dernier run
+    if (run_start.compare(line_end) < 0) {
+        string run = buffer.get_text(run_start, line_end, false);
+        if (run.length > 0) {
+            var fmts = new Gee.HashSet<TextFormatting>();
+            if (b) fmts.add(TextFormatting.BOLD);
+            if (i) fmts.add(TextFormatting.ITALIC);
+            if (s) fmts.add(TextFormatting.STRIKETHROUGH);
+            if (c) fmts.add(TextFormatting.CODE);
+            if (u) fmts.add(TextFormatting.UNDERLINE);
+            var seg = new TextSegment(run, fmts);
+            seg.link_href = href;
+            out.add(seg);
+        }
+    }
+    return out;
 }
 
 /**
@@ -1444,6 +1523,14 @@ public void apply_color_to_selection(string color) {
     TextIter start, end;
     if (buffer.get_selection_bounds(out start, out end)) {
         var tag = buffer.create_tag(null, "foreground", color);
+        buffer.apply_tag(tag, start, end);
+    }
+}
+
+public void apply_background_to_selection(string color) {
+    TextIter start, end;
+    if (buffer.get_selection_bounds(out start, out end)) {
+        var tag = buffer.create_tag(null, "background", color);
         buffer.apply_tag(tag, start, end);
     }
 }

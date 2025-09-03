@@ -187,6 +187,107 @@ private void initialize_ui() {
     insert_group.append(btn_image);
     format_bar.append(insert_group);
 
+    // Sélecteur de style (police, taille, couleurs)
+    var style_btn = make_plain_btn_from_candidates(
+        { "preferences-desktop-font", "font-select-symbolic", "format-text-color-symbolic" },
+        "A",
+        _("Police, taille et couleurs de la sélection")
+    );
+    format_bar.append(style_btn);
+    // Popover de style
+    var style_pop = new Gtk.Popover();
+    style_pop.set_has_arrow(true);
+    style_pop.set_parent(style_btn);
+    var style_box = new Gtk.Box(Orientation.VERTICAL, 8);
+    style_box.set_margin_top(8);
+    style_box.set_margin_bottom(8);
+    style_box.set_margin_start(8);
+    style_box.set_margin_end(8);
+    // Police
+    var font_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    font_row.append(new Gtk.Label(_("Police")));
+    var font_button = new Gtk.FontButton();
+    font_button.set_use_font(true);
+    font_row.append(font_button);
+    // Taille
+    var size_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    size_row.append(new Gtk.Label(_("Taille")));
+    var size_adjustment = new Gtk.Adjustment(12, 6, 96, 1, 4, 0);
+    var size_spin = new Gtk.SpinButton(size_adjustment, 1, 0);
+    size_row.append(size_spin);
+    // Couleur texte
+    var fg_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    fg_row.append(new Gtk.Label(_("Texte")));
+    var fg_button = new Gtk.ColorButton();
+    fg_row.append(fg_button);
+    // Couleur fond
+    var bg_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    bg_row.append(new Gtk.Label(_("Fond")));
+    var bg_button = new Gtk.ColorButton();
+    bg_row.append(bg_button);
+    // Actions
+    var act_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    var apply_btn = new Gtk.Button.with_label(_("Appliquer"));
+    var clear_btn = new Gtk.Button.with_label(_("Effacer"));
+    act_row.append(clear_btn);
+    act_row.append(apply_btn);
+    // Assembler
+    style_box.append(font_row);
+    style_box.append(size_row);
+    style_box.append(fg_row);
+    style_box.append(bg_row);
+    style_box.append(act_row);
+    style_pop.set_child(style_box);
+
+    style_btn.clicked.connect(() => {
+        style_pop.popup();
+    });
+
+    clear_btn.clicked.connect(() => {
+        if (wysiwyg_editor == null) return;
+        // Pour "effacer", on applique des tags neutres: police par défaut, couleurs héritées.
+        // Gtk.TextTag ne supporte pas "unset" direct; on peut supprimer des tags connus.
+        // Stratégie: appliquer des tags explicitement: foreground "@theme_fg_color" ne marche pas ici,
+        // on se contente de supprimer les tags sur la sélection.
+        var buf = wysiwyg_editor.get_buffer();
+        Gtk.TextIter s, e;
+        if (buf.get_selection_bounds(out s, out e)) {
+            // Supprime les tags de foreground/background/font/size sur l’intervalle
+            buf.remove_tag_by_name("foreground", s, e);
+            buf.remove_tag_by_name("background", s, e);
+            buf.remove_tag_by_name("font", s, e);
+            buf.remove_tag_by_name("font-desc", s, e);
+            buf.remove_tag_by_name("size", s, e);
+            buf.remove_tag_by_name("size-points", s, e);
+        }
+        style_pop.popdown();
+    });
+
+    apply_btn.clicked.connect(() => {
+        if (wysiwyg_editor == null) return;
+        // Police (nom de famille uniquement si possible)
+        string font = font_button.get_font();
+        string family = font;
+        if (font != null && font.index_of(" ") > 0) {
+            var parts = font.split(" ");
+            if (parts.length > 0) family = parts[0];
+        }
+        // Taille
+        int size = (int) size_spin.get_value();
+        // Couleurs
+        Gdk.RGBA fg = Gdk.RGBA();
+        fg = fg_button.get_rgba();
+        Gdk.RGBA bg = Gdk.RGBA();
+        bg = bg_button.get_rgba();
+
+        // Appliquer aux sélections présentes
+        wysiwyg_editor.apply_font_to_selection(family);
+        wysiwyg_editor.apply_font_size_to_selection(size);
+        wysiwyg_editor.apply_color_to_selection(fg.to_string());
+        wysiwyg_editor.apply_background_to_selection(bg.to_string());
+        style_pop.popdown();
+    });
+
     this.append(format_bar);
 
     // Zone d'édition scrollable minimale

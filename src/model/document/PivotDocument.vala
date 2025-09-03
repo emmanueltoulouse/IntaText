@@ -222,6 +222,9 @@ public string text;
 public Gee.HashSet<TextFormatting> formats;
 // Optionnel: lien associé à ce segment (href). Null si non-lié.
 public string? link_href;
+// Préférence de délimiteur pour export (préserve le style d'origine)
+public string? bold_marker;    // "**" ou "__"
+public string? italic_marker;  // "*" ou "_"
 
 public TextSegment(string text, Gee.HashSet<TextFormatting>? formats = null){
     this.text = text;
@@ -236,9 +239,16 @@ public string to_markdown(){
     string result = text;
     if (has_format(TextFormatting.CODE)) result = "`" + result + "`";
     if (has_format(TextFormatting.STRIKETHROUGH)) result = "~~" + result + "~~";
-    if (has_format(TextFormatting.BOLD)) result = "**" + result + "**";
-    if (has_format(TextFormatting.ITALIC)) result = "*" + result + "*";
-    if (has_format(TextFormatting.UNDERLINE)) result = "__" + result + "__";          // Convention Markdown pour souligné
+    // Appliquer d'abord l'italique puis le gras pour avoir le gras à l'extérieur par défaut
+    if (has_format(TextFormatting.ITALIC)) {
+        string im = italic_marker != null && italic_marker != "" ? italic_marker : "*";
+        result = im + result + im;
+    }
+    if (has_format(TextFormatting.BOLD)) {
+        string bm = bold_marker != null && bold_marker != "" ? bold_marker : "**";
+        result = bm + result + bm;
+    }
+    if (has_format(TextFormatting.UNDERLINE)) result = "<u>" + result + "</u>";       // Exporter souligné en HTML car non standard en MD
     // Encapsuler dans un lien si présent
     if (link_href != null && link_href.strip() != "") {
         result = "[" + result + "](" + link_href + ")";
@@ -255,6 +265,8 @@ public Json.Object to_json(){
     }
     obj.set_array_member("formats", formats_array);
     if (link_href != null && link_href != "") obj.set_string_member("link", link_href);
+    if (bold_marker != null && bold_marker != "") obj.set_string_member("bold_marker", bold_marker);
+    if (italic_marker != null && italic_marker != "") obj.set_string_member("italic_marker", italic_marker);
     return obj;
 }
 
@@ -278,6 +290,8 @@ public static TextSegment from_json(Json.Object node) throws Error {
         }
     }
     if (node.has_member("link")) segment.link_href = node.get_string_member("link");
+    if (node.has_member("bold_marker")) segment.bold_marker = node.get_string_member("bold_marker");
+    if (node.has_member("italic_marker")) segment.italic_marker = node.get_string_member("italic_marker");
     return segment;
 }
 }
@@ -454,16 +468,41 @@ public new static PivotList from_json(Json.Object node) throws Error {
 
 // Spécifier GLib.Object
 public class PivotListItem : PivotNode {
-public string text;
+public Gee.List<TextSegment> segments = new Gee.ArrayList<TextSegment>();
 public PivotList? children; // liste imbriquée optionnelle
+
+// Propriété de compatibilité: agrège/sépare segments en texte brut
+public string text {
+    owned get {
+        StringBuilder b = new StringBuilder();
+        foreach (var s in segments) b.append(s.text);
+        return b.str;
+    }
+    set {
+        segments.clear();
+        segments.add(new TextSegment(value ?? ""));
+    }
+}
+
 public override string to_markdown(){
-    // Simple markdown for list item (inline content already markdown-friendly)
-    return (text ?? "");
+    // Concaténer les segments inline avec format
+    StringBuilder b = new StringBuilder();
+    foreach (var s in segments) b.append(s.to_markdown());
+    return b.str;
 }
 public override string to_html(){
     // HTML list item conversion with optional nested list
     StringBuilder b = new StringBuilder();
-    b.append("<li>").append(text ?? "");
+    b.append("<li>");
+    // Rendu inline minimal similaire à PivotParagraph.to_html
+    foreach (var segment in segments){
+        string current_text = GLib.Markup.escape_text(segment.text);
+        if (segment.has_format(TextFormatting.CODE)) current_text = "<code>" + current_text + "</code>";
+        if (segment.has_format(TextFormatting.STRIKETHROUGH)) current_text = "<s>" + current_text + "</s>";
+        if (segment.has_format(TextFormatting.BOLD)) current_text = "<strong>" + current_text + "</strong>";
+        if (segment.has_format(TextFormatting.ITALIC)) current_text = "<em>" + current_text + "</em>";
+        b.append(current_text);
+    }
     if (children != null && children.items.size > 0) {
         b.append(children.to_html());
     }
@@ -474,7 +513,11 @@ public override string to_html(){
 public override Json.Object to_json(){
     var obj = new Json.Object();
     obj.set_string_member("type", "ListItem");
-    obj.set_string_member("text", text ?? "");         // Simplifié, pourrait être des segments plus tard
+    // Conserver text pour compat mais écrire aussi segments
+    obj.set_string_member("text", text ?? "");
+    var segments_array = new Json.Array();
+    foreach (var s in segments) segments_array.add_object_element(s.to_json());
+    obj.set_array_member("segments", segments_array);
     if (children != null){
         obj.set_object_member("children", children.to_json());
     }
@@ -484,7 +527,19 @@ public override Json.Object to_json(){
 // Ajouter 'new' pour masquer la méthode parente
 public new static PivotListItem from_json(Json.Object node) throws Error {
     var item = new PivotListItem();
-    if (node.has_member("text")) item.text = node.get_string_member("text");
+    if (node.has_member("segments")) {
+        var arr = node.get_array_member("segments");
+        if (arr != null) {
+            foreach (var el in arr.get_elements()) {
+                if (el.get_node_type() == Json.NodeType.OBJECT) {
+                    try { item.segments.add(TextSegment.from_json(el.get_object())); }
+                    catch (Error e) { warning("Failed to deserialize list item segment: %s", e.message); }
+                }
+            }
+        }
+    } else if (node.has_member("text")) {
+        item.text = node.get_string_member("text");
+    }
     if (node.has_member("children")) item.children = PivotList.from_json(node.get_object_member("children"));
     return item;
 }

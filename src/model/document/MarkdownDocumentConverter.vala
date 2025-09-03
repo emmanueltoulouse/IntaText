@@ -227,8 +227,10 @@ public PivotDocument to_pivot(string content, string path) {
                     last.children = nl;
                     indents.add(indents.size); stack.add(nl);
                 }
-                // Ajouter l'item au niveau courant
-                stack.get(stack.size - 1).items.add(new PivotListItem() { text = item_text });
+                // Ajouter l'item au niveau courant (avec emphase enrichie)
+                var li_unordered = new PivotListItem();
+                li_unordered.segments = parse_inline_formatting(item_text);
+                stack.get(stack.size - 1).items.add(li_unordered);
                 i++;
             }
             pivot.children.add(root);
@@ -270,7 +272,9 @@ public PivotDocument to_pivot(string content, string path) {
                     last.children = nl;
                     indents.add(indents.size); stack.add(nl);
                 }
-                stack.get(stack.size - 1).items.add(new PivotListItem() { text = item_text });
+                var li_ordered = new PivotListItem();
+                li_ordered.segments = parse_inline_formatting(item_text);
+                stack.get(stack.size - 1).items.add(li_ordered);
                 i++;
             }
             pivot.children.add(root);
@@ -344,7 +348,46 @@ private string apply_heading_style(string md, string style) {
 }
 
 private Gee.List<TextSegment> parse_inline_formatting(string text) {
-    return parse_inline_recursive_with_links(text, new Gee.HashSet<TextFormatting>());
+    // Traite d'abord les segments <u>…</u> en les convertissant en segments UNDERLINE,
+    // puis applique la détection des autres formats (gras/italique/barré/code) à l'intérieur.
+    return parse_inline_with_html_u(text, new Gee.HashSet<TextFormatting>());
+}
+
+// Découpe le texte selon les balises HTML <u>…</u> et délègue l'analyse du contenu
+// à parse_inline_recursive_with_links en ajoutant le flag UNDERLINE.
+private Gee.List<TextSegment> parse_inline_with_html_u(string text, Gee.HashSet<TextFormatting> active_formats) {
+    var segments = new Gee.ArrayList<TextSegment>();
+    int pos = 0;
+    while (pos < text.length) {
+        int open = text.index_of("<u>", pos);
+        if (open == -1) {
+            // Pas de soulignement HTML restant: parser le reste normalement
+            foreach (var seg in parse_inline_recursive_with_links(text.substring(pos), active_formats))
+                segments.add(seg);
+            break;
+        }
+        // Avant <u>
+        if (open > pos) {
+            foreach (var seg in parse_inline_recursive_with_links(text.substring(pos, open - pos), active_formats))
+                segments.add(seg);
+        }
+        int close = text.index_of("</u>", open + 3);
+        if (close == -1) {
+            // Balise d'ouverture sans fermeture: traiter le reste comme texte normal
+            foreach (var seg in parse_inline_recursive_with_links(text.substring(open), active_formats))
+                segments.add(seg);
+            break;
+        }
+        // Contenu souligné
+        string inner = text.substring(open + 3, close - (open + 3));
+        var under_formats = new Gee.HashSet<TextFormatting>();
+        under_formats.add_all(active_formats);
+        under_formats.add(TextFormatting.UNDERLINE);
+        foreach (var seg in parse_inline_recursive_with_links(inner, under_formats))
+            segments.add(seg);
+        pos = close + 4; // après </u>
+    }
+    return segments;
 }
 
 private PivotLink? try_parse_link_inline(string t) {
@@ -381,7 +424,9 @@ private Gee.List<TextSegment> parse_inline_recursive_with_links(string text, Gee
         // Cherche le prochain marqueur
         int next = text.length;
         string? found_marker = null;
-        string[] markers = { "**", "*", "~~", "`", "__", "[", "!" };
+    // Important: tester d'abord les marqueurs les plus longs pour éviter les collisions
+    // Inclure les triples pour bold+italic (*** et ___)
+    string[] markers = { "***", "___", "**", "__", "~~", "`", "*", "_", "[", "!" };
         foreach (var marker in markers) {
             int idx = text.index_of(marker, i);
             if (idx != -1 && idx < next) {
@@ -417,7 +462,8 @@ private Gee.List<TextSegment> parse_inline_recursive_with_links(string text, Gee
                 int q = text.index_of(")", p + 1);
                 if (q != -1) {
                     string label = text.substring(o + 1, c - (o + 1));
-                    string target = text.substring(p + 2, q - (p + 2));
+                    // p pointe sur '(', l'URL commence à p + 1 et s'étend jusqu'à juste avant ')'
+                    string target = text.substring(p + 1, q - (p + 1));
                     if (is_img) {
                         // Image => pas de segment texte; cela devrait idéalement être un nœud bloc, mais si inline, on garde alt comme texte
                         var copy = new Gee.HashSet<TextFormatting>();
@@ -436,39 +482,138 @@ private Gee.List<TextSegment> parse_inline_recursive_with_links(string text, Gee
                     continue;
                 }
             }
-            // Si la structure n'est pas complète, traiter comme texte brut
+            // Si la structure n'est pas complète, traiter le caractère comme texte brut et avancer d'un pas
+            var lit = new Gee.HashSet<TextFormatting>();
+            lit.add_all(active_formats);
+            segments.add(new TextSegment(text.substring(next, 1), lit));
+            i = next + 1;
+            continue;
         }
 
-        // Chercher la fin du marqueur (emphase/code)
-        int close = text.index_of(found_marker, next + found_marker.length);
-        if (close == -1) {
-            // Pas de fin de marqueur, considérer le reste comme texte brut
-            var copy = new Gee.HashSet<TextFormatting>();
-            copy.add_all(active_formats);
-            segments.add(new TextSegment(text.substring(next), copy));         // inclut le marqueur de début
-            break;
+        // Fonction utilitaire locale pour alphanum ASCII
+        bool is_ascii_alnum(char ch) {
+            return ((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'));
         }
 
-        // Le texte entre les marqueurs avec le format appliqué
-        var new_formats = new Gee.HashSet<TextFormatting>();
-        new_formats.add_all(active_formats);
+        // Chercher la fin du marqueur (emphase/code), avec règles spéciales pour underscores (", ", "__", "___")
+        if (found_marker == "_" || found_marker == "__" || found_marker == "___") {
+            int len = found_marker.length;
+            // Vérification des bordures pour l'ouverture
+            bool open_left_ok = (next == 0) || !is_ascii_alnum(text[next - 1]);
+            bool open_right_ok = (next + len < text.length) && is_ascii_alnum(text[next + len]);
+            if (!(open_left_ok && open_right_ok)) {
+                // Marqueur non valide (au milieu d'un mot) -> traiter comme texte
+                var copy = new Gee.HashSet<TextFormatting>();
+                copy.add_all(active_formats);
+                segments.add(new TextSegment(text.substring(next, len), copy));
+                i = next + len;
+                continue;
+            }
+            // Rechercher une fermeture valide
+            int close = text.index_of(found_marker, next + len);
+            while (close != -1) {
+                bool before_close_ok = (close - 1 >= 0) && is_ascii_alnum(text[close - 1]);
+                bool after_close_ok = (close + len >= text.length) || !is_ascii_alnum(text[close + len]);
+                if (before_close_ok && after_close_ok) break;
+                close = text.index_of(found_marker, close + len);
+            }
+            if (close == -1) {
+                // Pas de fermeture valide -> traiter le marqueur d'ouverture comme texte
+                var copy = new Gee.HashSet<TextFormatting>();
+                copy.add_all(active_formats);
+                segments.add(new TextSegment(text.substring(next, len), copy));
+                i = next + len;
+                continue;
+            }
 
-        // IMPORTANT: Détecter correctement le format
-    switch (found_marker) {
-        case "**": new_formats.add(TextFormatting.BOLD); break;
-        case "*": new_formats.add(TextFormatting.ITALIC); break;
-        case "~~": new_formats.add(TextFormatting.STRIKETHROUGH); break;
-        case "`": new_formats.add(TextFormatting.CODE); break;
-        case "__": new_formats.add(TextFormatting.UNDERLINE); break;
+            // Appliquer le format et extraire le contenu
+            var new_formats = new Gee.HashSet<TextFormatting>();
+            new_formats.add_all(active_formats);
+            // "___" = BOLD + ITALIC, "__" = BOLD, "_" = ITALIC
+            if (len == 3) {
+                new_formats.add(TextFormatting.BOLD);
+                new_formats.add(TextFormatting.ITALIC);
+            } else if (len == 2) {
+                new_formats.add(TextFormatting.BOLD);
+            } else {
+                new_formats.add(TextFormatting.ITALIC);
+            }
+
+            string content_between = text.substring(next + len, close - next - len);
+
+            // Analyse récursive du contenu pour gérer les emphases imbriquées
+            var sub = parse_inline_recursive_with_links(content_between, new_formats);
+            foreach (var s in sub) {
+                // Propager le type de délimiteur (underscores) si non défini par des sous-marqueurs
+                if (s.formats.contains(TextFormatting.BOLD) && (s.bold_marker == null || s.bold_marker.length == 0))
+                    s.bold_marker = "__";
+                if (s.formats.contains(TextFormatting.ITALIC) && (s.italic_marker == null || s.italic_marker.length == 0))
+                    s.italic_marker = "_";
+                segments.add(s);
+            }
+            i = close + len;
+            continue;
+        } else {
+            // Marqueurs autres que underscore: comportement existant
+            int close = text.index_of(found_marker, next + found_marker.length);
+            if (close == -1) {
+                // Pas de fin de marqueur, considérer le reste comme texte brut
+                var copy = new Gee.HashSet<TextFormatting>();
+                copy.add_all(active_formats);
+                segments.add(new TextSegment(text.substring(next), copy));         // inclut le marqueur de début
+                break;
+            }
+
+            // Le texte entre les marqueurs avec le format appliqué
+            var new_formats = new Gee.HashSet<TextFormatting>();
+            new_formats.add_all(active_formats);
+
+            // IMPORTANT: Détecter correctement le format
+            switch (found_marker) {
+            case "***":
+                new_formats.add(TextFormatting.BOLD);
+                new_formats.add(TextFormatting.ITALIC);
+                break;
+            case "**":
+                new_formats.add(TextFormatting.BOLD);
+                break;
+            case "*":
+                new_formats.add(TextFormatting.ITALIC);
+                break;
+            case "~~":
+                new_formats.add(TextFormatting.STRIKETHROUGH);
+                break;
+            case "`":
+                new_formats.add(TextFormatting.CODE);
+                break;
+            }
+
+            string content_between = text.substring(next + found_marker.length, close - next - found_marker.length);
+
+            if (found_marker == "`") {
+                // Code inline: pas d'analyse récursive à l'intérieur
+                var seg_code = new TextSegment(content_between, new_formats);
+                segments.add(seg_code);
+            } else {
+                // Analyse récursive pour supporter les emphases imbriquées (***, **, *, ~~)
+                var sub = parse_inline_recursive_with_links(content_between, new_formats);
+                if (sub.size == 0) {
+                    // texte vide entre marqueurs -> insérer segment vide avec les formats
+                    var empty_seg = new TextSegment("", new_formats);
+                    segments.add(empty_seg);
+                } else {
+                    foreach (var s in sub) {
+                        if (s.formats.contains(TextFormatting.BOLD) && (s.bold_marker == null || s.bold_marker.length == 0))
+                            s.bold_marker = "**";
+                        if (s.formats.contains(TextFormatting.ITALIC) && (s.italic_marker == null || s.italic_marker.length == 0))
+                            s.italic_marker = "*";
+                        segments.add(s);
+                    }
+                }
+            }
+            i = close + found_marker.length;
+            continue;
         }
-
-        // CORRECTION IMPORTANTE: Ajouter directement un segment avec le texte entre les marqueurs
-        // au lieu de faire une récursion qui peut garder les marqueurs
-        string content_between = text.substring(next + found_marker.length, close - next - found_marker.length);
-        segments.add(new TextSegment(content_between, new_formats));
-
-        // Avancer après le marqueur de fin
-    i = close + found_marker.length;
     }
     return segments;
 }
