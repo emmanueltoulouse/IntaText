@@ -22,6 +22,9 @@ private Gtk.TextTag tag_image;
 private Gtk.CssProvider css_provider;
 // Registre local des noms de tags dynamiques créés (pour retrouver href/src/alt)
 private Gee.ArrayList<string> link_tag_names = new Gee.ArrayList<string>();
+    // Registres pour tags dynamiques de couleur
+    private Gee.ArrayList<string> fg_tag_names = new Gee.ArrayList<string>();
+    private Gee.ArrayList<string> bg_tag_names = new Gee.ArrayList<string>();
 private Gee.ArrayList<string> image_src_tag_names = new Gee.ArrayList<string>();
 private Gee.ArrayList<string> image_alt_tag_names = new Gee.ArrayList<string>();
 
@@ -880,6 +883,25 @@ private void insert_run_with_formats(ref TextIter iter, string run_text, TextSeg
     if (segment.has_format(TextFormatting.STRIKETHROUGH)) buffer.apply_tag(tag_strikethrough, start, iter);
     if (segment.has_format(TextFormatting.CODE)) buffer.apply_tag(tag_code, start, iter);
     if (segment.has_format(TextFormatting.UNDERLINE) || add_underline) buffer.apply_tag(tag_underline, start, iter);
+    // Couleurs dynamiques
+    if (segment.fg_color != null && segment.fg_color.strip() != "") {
+        string cname = "fg::" + segment.fg_color.strip();
+        Gtk.TextTag t = (Gtk.TextTag) buffer.get_tag_table().lookup(cname);
+        if (t == null) {
+            t = buffer.create_tag(cname, "foreground", segment.fg_color.strip());
+        }
+        buffer.apply_tag(t, start, iter);
+        if (!fg_tag_names.contains(cname)) fg_tag_names.add(cname);
+    }
+    if (segment.bg_color != null && segment.bg_color.strip() != "") {
+        string cname = "bg::" + segment.bg_color.strip();
+        Gtk.TextTag t = (Gtk.TextTag) buffer.get_tag_table().lookup(cname);
+        if (t == null) {
+            t = buffer.create_tag(cname, "background", segment.bg_color.strip());
+        }
+        buffer.apply_tag(t, start, iter);
+        if (!bg_tag_names.contains(cname)) bg_tag_names.add(cname);
+    }
     if (segment.link_href != null && segment.link_href.strip() != "") {
         // Appliquer style lien + tag URL
         buffer.apply_tag(tag_link, start, iter);
@@ -1193,7 +1215,7 @@ private Gee.List<TextSegment> extract_inline_segments_from_text(string plain, Te
     TextIter run_start = it;
     // État courant
     bool b = false, i = false, s = false, c = false, u = false;
-    string? href = null;
+    string? href = null; string? fgc = null; string? bgc = null;
 
     string? current_href(TextIter a) {
         foreach (var name in link_tag_names) {
@@ -1205,18 +1227,36 @@ private Gee.List<TextSegment> extract_inline_segments_from_text(string plain, Te
         }
         return null;
     }
+    string? current_fg(TextIter a) {
+        foreach (var name in fg_tag_names) {
+            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+            if (t != null && a.has_tag(t)) {
+                return name.substring("fg::".length);
+            }
+        }
+        return null;
+    }
+    string? current_bg(TextIter a) {
+        foreach (var name in bg_tag_names) {
+            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+            if (t != null && a.has_tag(t)) {
+                return name.substring("bg::".length);
+            }
+        }
+        return null;
+    }
     // helper pour comparer l'état
-    bool same_state(TextIter a, bool cb, bool ci, bool cs, bool cc, bool cu, string? ch) {
-        return a.has_tag(tag_bold) == cb && a.has_tag(tag_italic) == ci && a.has_tag(tag_strikethrough) == cs && a.has_tag(tag_code) == cc && a.has_tag(tag_underline) == cu && current_href(a) == ch;
+    bool same_state(TextIter a, bool cb, bool ci, bool cs, bool cc, bool cu, string? ch, string? cfg, string? cbg) {
+        return a.has_tag(tag_bold) == cb && a.has_tag(tag_italic) == ci && a.has_tag(tag_strikethrough) == cs && a.has_tag(tag_code) == cc && a.has_tag(tag_underline) == cu && current_href(a) == ch && current_fg(a) == cfg && current_bg(a) == cbg;
     }
 
     // init état
-    b = it.has_tag(tag_bold); i = it.has_tag(tag_italic); s = it.has_tag(tag_strikethrough); c = it.has_tag(tag_code); u = it.has_tag(tag_underline); href = current_href(it);
+    b = it.has_tag(tag_bold); i = it.has_tag(tag_italic); s = it.has_tag(tag_strikethrough); c = it.has_tag(tag_code); u = it.has_tag(tag_underline); href = current_href(it); fgc = current_fg(it); bgc = current_bg(it);
     run_start = it;
     while (it.compare(line_end) < 0) {
         TextIter next = it; if (!next.forward_char()) break;
-    bool nb = next.has_tag(tag_bold), ni = next.has_tag(tag_italic), ns = next.has_tag(tag_strikethrough), nc = next.has_tag(tag_code), nu = next.has_tag(tag_underline); string? nhref = current_href(next);
-        if (nb != b || ni != i || ns != s || nc != c || nu != u || nhref != href) {
+    bool nb = next.has_tag(tag_bold), ni = next.has_tag(tag_italic), ns = next.has_tag(tag_strikethrough), nc = next.has_tag(tag_code), nu = next.has_tag(tag_underline); string? nhref = current_href(next); string? nfg = current_fg(next); string? nbg = current_bg(next);
+        if (nb != b || ni != i || ns != s || nc != c || nu != u || nhref != href || nfg != fgc || nbg != bgc) {
             string run = buffer.get_text(run_start, it, false);
             if (run.length > 0) {
                 var fmts = new Gee.HashSet<TextFormatting>();
@@ -1226,11 +1266,11 @@ private Gee.List<TextSegment> extract_inline_segments_from_text(string plain, Te
                 if (c) fmts.add(TextFormatting.CODE);
                 if (u) fmts.add(TextFormatting.UNDERLINE);
                 var seg = new TextSegment(run, fmts);
-                seg.link_href = href;
+                seg.link_href = href; seg.fg_color = fgc; seg.bg_color = bgc;
                 out.add(seg);
             }
             run_start = it;
-            b = nb; i = ni; s = ns; c = nc; u = nu; href = nhref;
+            b = nb; i = ni; s = ns; c = nc; u = nu; href = nhref; fgc = nfg; bgc = nbg;
         }
         it = next;
     }
@@ -1245,7 +1285,7 @@ private Gee.List<TextSegment> extract_inline_segments_from_text(string plain, Te
             if (c) fmts.add(TextFormatting.CODE);
             if (u) fmts.add(TextFormatting.UNDERLINE);
             var seg = new TextSegment(run, fmts);
-            seg.link_href = href;
+            seg.link_href = href; seg.fg_color = fgc; seg.bg_color = bgc;
             out.add(seg);
         }
     }

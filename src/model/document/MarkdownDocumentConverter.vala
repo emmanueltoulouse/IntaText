@@ -349,32 +349,34 @@ private string apply_heading_style(string md, string style) {
 
 private Gee.List<TextSegment> parse_inline_formatting(string text) {
     // Traite d'abord les segments <u>…</u> en les convertissant en segments UNDERLINE,
-    // puis applique la détection des autres formats (gras/italique/barré/code) à l'intérieur.
+    // et gère aussi les balises HTML inline basiques (<em>/<i>, <strong>/<b>, <code>, <del>). 
+    // À l'intérieur de ces zones, on applique ensuite la détection Markdown (gras/italique/barré/code/liens).
     return parse_inline_with_html_u(text, new Gee.HashSet<TextFormatting>());
 }
 
 // Découpe le texte selon les balises HTML <u>…</u> et délègue l'analyse du contenu
 // à parse_inline_recursive_with_links en ajoutant le flag UNDERLINE.
+// Analyse <u> et délègue au parseur HTML inline basique + liens/markdown
 private Gee.List<TextSegment> parse_inline_with_html_u(string text, Gee.HashSet<TextFormatting> active_formats) {
     var segments = new Gee.ArrayList<TextSegment>();
     int pos = 0;
     while (pos < text.length) {
         int open = text.index_of("<u>", pos);
         if (open == -1) {
-            // Pas de soulignement HTML restant: parser le reste normalement
-            foreach (var seg in parse_inline_recursive_with_links(text.substring(pos), active_formats))
+            // Pas de soulignement HTML restant: parser le reste avec les balises HTML inline basiques
+            foreach (var seg in parse_inline_with_basic_html_and_links(text.substring(pos), active_formats))
                 segments.add(seg);
             break;
         }
         // Avant <u>
         if (open > pos) {
-            foreach (var seg in parse_inline_recursive_with_links(text.substring(pos, open - pos), active_formats))
+            foreach (var seg in parse_inline_with_basic_html_and_links(text.substring(pos, open - pos), active_formats))
                 segments.add(seg);
         }
         int close = text.index_of("</u>", open + 3);
         if (close == -1) {
             // Balise d'ouverture sans fermeture: traiter le reste comme texte normal
-            foreach (var seg in parse_inline_recursive_with_links(text.substring(open), active_formats))
+            foreach (var seg in parse_inline_with_basic_html_and_links(text.substring(open), active_formats))
                 segments.add(seg);
             break;
         }
@@ -383,9 +385,117 @@ private Gee.List<TextSegment> parse_inline_with_html_u(string text, Gee.HashSet<
         var under_formats = new Gee.HashSet<TextFormatting>();
         under_formats.add_all(active_formats);
         under_formats.add(TextFormatting.UNDERLINE);
-        foreach (var seg in parse_inline_recursive_with_links(inner, under_formats))
+        foreach (var seg in parse_inline_with_basic_html_and_links(inner, under_formats))
             segments.add(seg);
         pos = close + 4; // après </u>
+    }
+    return segments;
+}
+
+// Gère les balises HTML inline basiques (<em>/<i>, <strong>/<b>, <code>, <del>, <span style=...>)
+// et délègue le texte hors balises au parseur Markdown+liens
+private Gee.List<TextSegment> parse_inline_with_basic_html_and_links(string text, Gee.HashSet<TextFormatting> active_formats) {
+    var segments = new Gee.ArrayList<TextSegment>();
+    int i = 0;
+    while (i < text.length) {
+        int next = text.length;
+        string? tag = null;
+        // Ordre d'analyse: tags plus longs/forts d'abord
+    string[] tags = { "<span", "</span>", "<strong>", "</strong>", "<em>", "</em>", "<b>", "</b>", "<i>", "</i>", "<code>", "</code>", "<del>", "</del>" };
+        foreach (var t in tags) {
+            int p = text.index_of(t, i);
+            if (p != -1 && p < next) { next = p; tag = t; }
+        }
+
+        if (tag == null) {
+            // Pas de balise HTML connue -> déléguer le reste au parseur Markdown
+            if (i < text.length) {
+                foreach (var seg in parse_inline_recursive_with_links(text.substring(i), active_formats)) segments.add(seg);
+            }
+            break;
+        }
+
+        // Avant la balise -> Markdown
+        if (next > i) {
+            foreach (var seg in parse_inline_recursive_with_links(text.substring(i, next - i), active_formats)) segments.add(seg);
+        }
+
+        // Balise ouvrante/fermante: ne rien insérer littéralement; appliquer le format sur le contenu entre ouvrant/fermant
+        // Déterminer le couple de balises et le format
+        string open_tag = null; string close_tag = null; TextFormatting? fmt = null; string bold_marker = null; string italic_marker = null;
+        bool is_span = false; string? span_fg = null; string? span_bg = null;
+        switch (tag) {
+        case "<span":    // <span style="...">
+            // Chercher la fin de la balise ouvrante '>' et extraire style="..."
+            int gt = text.index_of(">", next + 5);
+            if (gt == -1) { i = next + 5; continue; }
+            string open_full = text.substring(next, gt - next + 1); // inclut '>'
+            // Par parse simple du style="..."
+            int sidx = open_full.index_of("style=");
+            if (sidx != -1) {
+                int q1 = open_full.index_of_char('"', sidx);
+                if (q1 != -1) {
+                    int q2 = open_full.index_of_char('"', q1 + 1);
+                    if (q2 != -1) {
+                        string style = open_full.substring(q1 + 1, q2 - (q1 + 1));
+                        // parser propriétés simples: color:...; background(-color):...;
+                        foreach (var part in style.split(";")) {
+                            string p = part.strip(); if (p == "") continue;
+                            int colon = p.index_of(":"); if (colon == -1) continue;
+                            string key = p.substring(0, colon).strip().down();
+                            string val = p.substring(colon + 1).strip();
+                            if (key == "color") span_fg = val;
+                            else if (key == "background" || key == "background-color") span_bg = val;
+                        }
+                    }
+                }
+            }
+            open_tag = open_full; close_tag = "</span>"; is_span = true; break;
+        case "<strong>": open_tag = "<strong>"; close_tag = "</strong>"; fmt = TextFormatting.BOLD; bold_marker = "**"; break;
+        case "<b>":      open_tag = "<b>";      close_tag = "</b>";      fmt = TextFormatting.BOLD; bold_marker = "**"; break;
+        case "<em>":     open_tag = "<em>";     close_tag = "</em>";     fmt = TextFormatting.ITALIC; italic_marker = "*"; break;
+        case "<i>":      open_tag = "<i>";      close_tag = "</i>";      fmt = TextFormatting.ITALIC; italic_marker = "*"; break;
+        case "<code>":   open_tag = "<code>";   close_tag = "</code>";   fmt = TextFormatting.CODE; break;
+        case "<del>":    open_tag = "<del>";    close_tag = "</del>";    fmt = TextFormatting.STRIKETHROUGH; break;
+        default:
+            // Balise fermante isolée ou non gérée -> ignorer et avancer d’un caractère
+            i = next + (tag != null ? tag.length : 1);
+            continue;
+        }
+
+        // Chercher la fermeture correspondante à partir de la fin de l’ouvrant
+    int content_start = next + open_tag.length;
+        int close = text.index_of(close_tag, content_start);
+        if (close == -1) {
+            // Pas de fermeture -> traiter la balise comme texte brut via Markdown
+            foreach (var seg in parse_inline_recursive_with_links(text.substring(next, 1), active_formats)) segments.add(seg);
+            i = next + 1;
+            continue;
+        }
+
+        string inner = text.substring(content_start, close - content_start);
+        var new_formats = new Gee.HashSet<TextFormatting>(); new_formats.add_all(active_formats);
+        if (fmt != null) new_formats.add((TextFormatting) fmt);
+
+        // Pour <code>, ne pas analyser Markdown à l'intérieur
+        if (fmt == TextFormatting.CODE) {
+            var seg = new TextSegment(inner, new_formats);
+            if (is_span) { seg.fg_color = span_fg; seg.bg_color = span_bg; }
+            segments.add(seg);
+        } else {
+            // Analyse récursive HTML+Markdown à l’intérieur
+            foreach (var seg in parse_inline_with_basic_html_and_links(inner, new_formats)) {
+                if (bold_marker != null && seg.formats.contains(TextFormatting.BOLD) && (seg.bold_marker == null || seg.bold_marker.length == 0)) seg.bold_marker = bold_marker;
+                if (italic_marker != null && seg.formats.contains(TextFormatting.ITALIC) && (seg.italic_marker == null || seg.italic_marker.length == 0)) seg.italic_marker = italic_marker;
+                if (is_span) {
+                    // Propager la couleur aux sous-segments qui n'en ont pas
+                    if (seg.fg_color == null || seg.fg_color == "") seg.fg_color = span_fg;
+                    if (seg.bg_color == null || seg.bg_color == "") seg.bg_color = span_bg;
+                }
+                segments.add(seg);
+            }
+        }
+        i = close + close_tag.length;
     }
     return segments;
 }

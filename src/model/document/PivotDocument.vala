@@ -225,6 +225,9 @@ public string? link_href;
 // Préférence de délimiteur pour export (préserve le style d'origine)
 public string? bold_marker;    // "**" ou "__"
 public string? italic_marker;  // "*" ou "_"
+// Couleurs inline facultatives
+public string? fg_color;        // ex: "#ff0000" ou "red"
+public string? bg_color;        // ex: "#ffff00"
 
 public TextSegment(string text, Gee.HashSet<TextFormatting>? formats = null){
     this.text = text;
@@ -249,6 +252,22 @@ public string to_markdown(){
         result = bm + result + bm;
     }
     if (has_format(TextFormatting.UNDERLINE)) result = "<u>" + result + "</u>";       // Exporter souligné en HTML car non standard en MD
+    // Appliquer les couleurs inline via <span style="...">
+    if ((fg_color != null && fg_color.strip() != "") || (bg_color != null && bg_color.strip() != "")) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<span style=\"");
+        bool first = true;
+        if (fg_color != null && fg_color.strip() != "") {
+            sb.append("color:"); sb.append(fg_color.strip()); sb.append(";"); first = false;
+        }
+        if (bg_color != null && bg_color.strip() != "") {
+            sb.append("background-color:"); sb.append(bg_color.strip()); sb.append(";");
+        }
+        sb.append("\">");
+        sb.append(result);
+        sb.append("</span>");
+        result = sb.str;
+    }
     // Encapsuler dans un lien si présent
     if (link_href != null && link_href.strip() != "") {
         result = "[" + result + "](" + link_href + ")";
@@ -267,6 +286,8 @@ public Json.Object to_json(){
     if (link_href != null && link_href != "") obj.set_string_member("link", link_href);
     if (bold_marker != null && bold_marker != "") obj.set_string_member("bold_marker", bold_marker);
     if (italic_marker != null && italic_marker != "") obj.set_string_member("italic_marker", italic_marker);
+    if (fg_color != null && fg_color != "") obj.set_string_member("fg_color", fg_color);
+    if (bg_color != null && bg_color != "") obj.set_string_member("bg_color", bg_color);
     return obj;
 }
 
@@ -292,6 +313,8 @@ public static TextSegment from_json(Json.Object node) throws Error {
     if (node.has_member("link")) segment.link_href = node.get_string_member("link");
     if (node.has_member("bold_marker")) segment.bold_marker = node.get_string_member("bold_marker");
     if (node.has_member("italic_marker")) segment.italic_marker = node.get_string_member("italic_marker");
+    if (node.has_member("fg_color")) segment.fg_color = node.get_string_member("fg_color");
+    if (node.has_member("bg_color")) segment.bg_color = node.get_string_member("bg_color");
     return segment;
 }
 }
@@ -345,6 +368,20 @@ public override string to_html(){
         }
         if (segment.has_format(TextFormatting.ITALIC)){
             current_text = "<em>" + current_text + "</em>";
+        }
+        if ((segment.fg_color != null && segment.fg_color.strip() != "") || (segment.bg_color != null && segment.bg_color.strip() != "")) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("<span style=\"");
+            if (segment.fg_color != null && segment.fg_color.strip() != "") {
+                sb.append("color:"); sb.append(GLib.Markup.escape_text(segment.fg_color.strip())); sb.append(";");
+            }
+            if (segment.bg_color != null && segment.bg_color.strip() != "") {
+                sb.append("background-color:"); sb.append(GLib.Markup.escape_text(segment.bg_color.strip())); sb.append(";");
+            }
+            sb.append("\">");
+            sb.append(current_text);
+            sb.append("</span>");
+            current_text = sb.str;
         }
         // If no specific format applied (or only NORMAL), just append escaped text
         builder.append(current_text);
