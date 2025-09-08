@@ -591,9 +591,9 @@ public class PivotTable : PivotNode {
 public Gee.List<Gee.List<string> > rows = new Gee.ArrayList<Gee.List<string> >();
 public override string to_markdown(){
     if (rows.size == 0) return "";
-    
+
     StringBuilder builder = new StringBuilder();
-    
+
     // Première ligne - En-têtes
     if (rows.size > 0) {
         builder.append("| ");
@@ -602,14 +602,14 @@ public override string to_markdown(){
             builder.append(" | ");
         }
         builder.append("\n");
-        
+
         // Ligne de séparation
         builder.append("|");
         foreach (string cell in rows[0]) {
             builder.append("---|");
         }
         builder.append("\n");
-        
+
         // Lignes de données
         for (int i = 1; i < rows.size; i++) {
             builder.append("| ");
@@ -620,7 +620,7 @@ public override string to_markdown(){
             builder.append("\n");
         }
     }
-    
+
     return builder.str;
 }
 public override string to_html(){

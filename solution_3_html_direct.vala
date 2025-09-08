@@ -9,7 +9,7 @@ public class TextSegment : Object {
     public string? fg_color { get; set; default = null; }
     public string? bg_color { get; set; default = null; }
     public string? link_href { get; set; default = null; }
-    
+
     // Méthode améliorée de export markdown
     public string to_markdown() {
         if (html_content != null && html_content != "") {
@@ -25,7 +25,7 @@ public class TextSegment : Object {
 private void extract_segments_with_html_preservation(TextIter start, TextIter end) {
     // Au lieu d'essayer de reconstruire les couleurs depuis les tags,
     // extraire directement le HTML du buffer et le stocker
-    
+
     string buffer_text = buffer.get_text(start, end, false);
     if (contains_html_formatting(buffer_text)) {
         // Le texte contient du formatage HTML, le préserver tel quel

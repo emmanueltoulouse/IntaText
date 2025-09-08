@@ -285,7 +285,7 @@ public PivotDocument to_pivot(string content, string path) {
         if (t.contains("|")) {
             flush_paragraph();
             var table = new PivotTable();
-            
+
             // Parser la première ligne (headers)
             var header_cells = t.split("|");
             var header_row = new Gee.ArrayList<string>();
@@ -298,9 +298,9 @@ public PivotDocument to_pivot(string content, string path) {
             if (header_row.size > 0) {
                 table.rows.add(header_row);
             }
-            
+
             i++; // passer à la ligne suivante
-            
+
             // Vérifier si la ligne suivante est une ligne de séparation (avec -, : et |)
             bool has_separator = false;
             if (i < lines.length) {
@@ -310,14 +310,14 @@ public PivotDocument to_pivot(string content, string path) {
                     i++; // ignorer la ligne de séparation
                 }
             }
-            
+
             // Continuer à parser les lignes de données
             while (i < lines.length) {
                 string row_line = lines[i].strip();
                 if (row_line == "" || !row_line.contains("|")) {
                     break;
                 }
-                
+
                 var data_cells = row_line.split("|");
                 var data_row = new Gee.ArrayList<string>();
                 for (int j = 0; j < data_cells.length; j++) {
@@ -331,7 +331,7 @@ public PivotDocument to_pivot(string content, string path) {
                 }
                 i++;
             }
-            
+
             pivot.children.add(table);
             continue;
         }
@@ -412,7 +412,7 @@ private string apply_heading_style(string md, string style) {
 
 private Gee.List<TextSegment> parse_inline_formatting(string text) {
     // Traite d'abord les segments <u>…</u> en les convertissant en segments UNDERLINE,
-    // et gère aussi les balises HTML inline basiques (<em>/<i>, <strong>/<b>, <code>, <del>). 
+    // et gère aussi les balises HTML inline basiques (<em>/<i>, <strong>/<b>, <code>, <del>).
     // À l'intérieur de ces zones, on applique ensuite la détection Markdown (gras/italique/barré/code/liens).
     return parse_inline_with_html_u(text, new Gee.HashSet<TextFormatting>());
 }

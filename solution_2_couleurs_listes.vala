@@ -19,7 +19,7 @@ while (!scan_pos.equal(search_end)) {
         }
     }
     if (found_color_formatting) break;
-    
+
     // Vérifier couleurs de fond
     foreach (var name in bg_tag_names) {
         var t_bg = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
@@ -29,7 +29,7 @@ while (!scan_pos.equal(search_end)) {
         }
     }
     if (found_color_formatting) break;
-    
+
     if (!scan_pos.forward_char()) break;
 }
 
@@ -37,7 +37,7 @@ if (found_color_formatting) {
     // Utiliser extract_formatted_segments avec le texte complet de la ligne
     string full_line_text = buffer.get_text(search_start, search_end, false);
     item.segments = extract_formatted_segments(full_line_text, search_start, search_end);
-    
+
     // Puis nettoyer les segments pour enlever les préfixes de liste
     clean_list_prefix_from_segments(item.segments, is_bullet, is_ordered);
 } else {

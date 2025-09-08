@@ -66,7 +66,7 @@ public WysiwygEditor() {
             apply_pending_attributes(iter, text.length);
         }
     });
-    
+
     // Gestionnaire pour redimensionnement de la fenêtre (mise à jour des traits)
     this.notify["allocated-width"].connect(this.on_size_changed);
 
@@ -135,7 +135,7 @@ private void ensure_tags() {
     // Rule (trait de séparation horizontal)
     tag_rule = (Gtk.TextTag) table.lookup("rule");
     if (tag_rule == null) {
-        tag_rule = buffer.create_tag("rule", 
+        tag_rule = buffer.create_tag("rule",
                                    "foreground", "#CCCCCC",
                                    "size", 12000,
                                    "weight", Pango.Weight.LIGHT);
@@ -170,18 +170,18 @@ private void ensure_tags() {
 // Applique les attributs en attente au texte qui vient d'être inséré
 private void apply_pending_attributes(TextIter iter, int text_length) {
     if (!has_pending_attributes) return;
-    
+
     try {
         // Vérification de sécurité des paramètres
         if (text_length <= 0) return;
-        
+
         // Calculer les itérateurs de début et fin du texte inséré
         TextIter start = iter;
         if (!start.backward_chars(text_length)) {
             warning("Impossible de déplacer l'itérateur de début");
             return;
         }
-        
+
         // Vérification que les itérateurs sont valides
         if (!start.is_start() && !start.is_end() && !iter.is_start() && !iter.is_end()) {
             // Appliquer la police si définie
@@ -195,7 +195,7 @@ private void apply_pending_attributes(TextIter iter, int text_length) {
                     warning("Erreur lors de l'application de la police: %s", font_error.message);
                 }
             }
-            
+
             // Appliquer la taille si définie
             if (current_font_size > 0) {
                 try {
@@ -208,7 +208,7 @@ private void apply_pending_attributes(TextIter iter, int text_length) {
                 }
             }
         }
-        
+
         // Réinitialiser les attributs en attente après application
         // Note: on garde les attributs pour la suite de la saisie
         // has_pending_attributes = false;
@@ -706,18 +706,18 @@ private void on_size_changed() {
 private void update_existing_horizontal_rules() {
     // Calculer la nouvelle longueur
     int new_length = calculate_rule_length();
-    
+
     // Créer le nouveau texte du trait
     var rule_text = new StringBuilder();
     for (int i = 0; i < new_length; i++) {
         rule_text.append_unichar('─');
     }
-    
+
     // Parcourir tout le buffer pour trouver les traits existants
     Gtk.TextIter start_iter, end_iter;
     buffer.get_start_iter(out start_iter);
     buffer.get_end_iter(out end_iter);
-    
+
     Gtk.TextIter match_start, match_end;
     while (start_iter.forward_search("─", Gtk.TextSearchFlags.TEXT_ONLY, out match_start, out match_end, end_iter)) {
         // Vérifier si ce trait a le tag_rule
@@ -725,7 +725,7 @@ private void update_existing_horizontal_rules() {
             // Trouver le début et la fin complète du trait
             Gtk.TextIter rule_start = match_start;
             Gtk.TextIter rule_end = match_end;
-            
+
             // Étendre vers la gauche
             while (rule_start.backward_char() && rule_start.get_char() == '─') {
                 // Continue
@@ -733,7 +733,7 @@ private void update_existing_horizontal_rules() {
             if (rule_start.get_char() != '─') {
                 rule_start.forward_char();
             }
-            
+
             // Étendre vers la droite
             while (rule_end.forward_char() && rule_end.get_char() == '─') {
                 // Continue
@@ -741,12 +741,12 @@ private void update_existing_horizontal_rules() {
             if (rule_end.get_char() != '─') {
                 rule_end.backward_char();
             }
-            
+
             // Remplacer le trait existant par le nouveau
             buffer.delete(ref rule_start, ref rule_end);
             buffer.insert_with_tags(ref rule_start, rule_text.str, -1, tag_rule);
         }
-        
+
         // Continuer la recherche depuis la fin du match actuel
         start_iter = match_end;
     }
@@ -756,12 +756,12 @@ private void update_existing_horizontal_rules() {
 private int calculate_rule_length() {
     // Obtenir la largeur réelle du widget
     int widget_width = this.get_width();
-    
+
     // Si get_width() ne fonctionne pas, essayer get_allocated_width()
     if (widget_width <= 0) {
         widget_width = this.get_allocated_width();
     }
-    
+
     // Si toujours pas de largeur valide, utiliser une estimation basée sur le parent
     if (widget_width <= 0) {
         var parent = this.get_parent();
@@ -769,28 +769,28 @@ private int calculate_rule_length() {
             widget_width = parent.get_width();
         }
     }
-    
+
     // Valeur de secours si tout échoue
     if (widget_width <= 0) {
         widget_width = 600; // Largeur minimale raisonnable
     }
-    
+
     // Calculer le nombre de caractères
     // Largeur d'un caractère ─ est approximativement 8 pixels avec la police par défaut
     int char_width = 7;
     int available_width = widget_width - 80; // Marges, padding, scrollbar
     int rule_length = available_width / char_width;
-    
+
     // Assurer une longueur minimum et maximum raisonnables
     if (rule_length < 40) rule_length = 80;   // Minimum pour petites fenêtres
     if (rule_length > 200) rule_length = 200; // Maximum pour très grandes fenêtres
-    
+
     return rule_length;
 }
 
 public void insert_horizontal_rule() {
     ensure_tags();
-    
+
     // Obtenir la position actuelle du curseur
     TextIter iter;
     buffer.get_iter_at_mark(out iter, buffer.get_insert());
@@ -802,32 +802,32 @@ public void insert_horizontal_rule() {
 
     // Marque pour le début de la règle
     TextMark rule_start = buffer.create_mark(null, iter, true);
-    
+
     // Calculer la largeur optimale
     int rule_length = calculate_rule_length();
-    
+
     // Créer un trait continu et élégant avec des caractères Unicode
     StringBuilder rule_builder = new StringBuilder();
     for (int i = 0; i < rule_length; i++) {
         rule_builder.append_unichar('─');
     }
     string rule_line = rule_builder.str;
-    
+
     buffer.insert(ref iter, rule_line + "\n\n", -1);
-    
+
     // Appliquer le tag de règle
     TextIter start;
     buffer.get_iter_at_mark(out start, rule_start);
     TextIter end = start;
     end.forward_chars(rule_line.length);
     buffer.apply_tag(tag_rule, start, end);
-    
+
     buffer.delete_mark(rule_start);
 }
 
 public void insert_table_object(PivotTable table) {
     ensure_tags();
-    
+
     // Obtenir la position actuelle du curseur
     TextIter iter;
     buffer.get_iter_at_mark(out iter, buffer.get_insert());
@@ -839,13 +839,13 @@ public void insert_table_object(PivotTable table) {
 
     // Insérer une ligne vide avant le tableau
     buffer.insert(ref iter, "\n", -1);
-    
+
     // Créer et insérer un widget de tableau dynamique
     insert_dynamic_table_widget(table, ref iter);
-    
+
     // Ajouter un saut de ligne après le tableau
     buffer.insert(ref iter, "\n", -1);
-    
+
     // Positionner le curseur après le tableau
     buffer.place_cursor(iter);
 }
@@ -861,7 +861,7 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
             num_cols = row.size;
         }
     }
-    
+
     if (num_cols == 0) return;
 
     // Créer un Grid GTK pour le tableau
@@ -899,8 +899,8 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
         ";
         table_css_provider.load_from_string(css_content);
         Gtk.StyleContext.add_provider_for_display(
-            this.get_display(), 
-            table_css_provider, 
+            this.get_display(),
+            table_css_provider,
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         );
     } catch (Error e) {
@@ -909,32 +909,32 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
 
     // Créer les cellules du tableau
     var entries = new Gtk.Entry[table.rows.size, num_cols];
-    
+
     for (int i = 0; i < table.rows.size; i++) {
         var row = table.rows[i];
         bool is_header = (i == 0);
-        
+
         for (int j = 0; j < num_cols; j++) {
             var entry = new Gtk.Entry();
             entry.set_has_frame(false);
-            
+
             // Contenu de la cellule
             if (row != null && j < row.size && row[j] != null) {
                 entry.set_text(row[j]);
             } else {
                 entry.set_text("");
             }
-            
+
             // Appliquer le style approprié
             if (is_header) {
                 entry.add_css_class("table-header");
             } else {
                 entry.add_css_class("table-cell");
             }
-            
+
             // Stocker la référence pour les callbacks
             entries[i, j] = entry;
-            
+
             // Connecter le signal de changement de texte pour redimensionnement dynamique
             int row_idx = i, col_idx = j;
             entry.changed.connect(() => {
@@ -942,7 +942,7 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
                 if (table.rows.size > row_idx && table.rows[row_idx] != null && table.rows[row_idx].size > col_idx) {
                     table.rows[row_idx][col_idx] = entry.get_text();
                 }
-                
+
                 // Calculer la nouvelle largeur nécessaire pour toute la colonne
                 int max_width_needed = 10; // Largeur minimale
                 for (int r = 0; r < table.rows.size; r++) {
@@ -953,10 +953,10 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
                         }
                     }
                 }
-                
+
                 // Limiter la largeur maximale
                 if (max_width_needed > 50) max_width_needed = 50;
-                
+
                 // Ajuster la largeur de toutes les cellules de cette colonne
                 for (int r = 0; r < table.rows.size; r++) {
                     if (entries[r, col_idx] != null) {
@@ -964,10 +964,10 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
                     }
                 }
             });
-            
+
             // Largeur initiale basée sur le contenu maximum de la colonne
             int initial_width = 10; // Largeur minimale
-            
+
             // Calculer la largeur optimale pour cette colonne
             for (int r = 0; r < table.rows.size; r++) {
                 if (table.rows[r] != null && col_idx < table.rows[r].size && table.rows[r][col_idx] != null) {
@@ -977,21 +977,26 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
                     }
                 }
             }
-            
+
             if (initial_width > 50) initial_width = 50; // Largeur maximale
             entry.set_width_chars(initial_width);
-            
+
             // Ajouter l'entry au grid
             table_grid.attach(entry, j, i, 1, 1);
         }
     }
 
-    // Créer un TextChildAnchor pour insérer le widget
-    var anchor = buffer.create_child_anchor(iter);
+    // CORRECTION CRITIQUE : Créer un nouvel itérateur local pour create_child_anchor
+    // pour éviter d'invalider l'itérateur iter passé en référence
+    TextIter anchor_iter = iter;
+    var anchor = buffer.create_child_anchor(anchor_iter);
     
+    // Mettre à jour iter avec la nouvelle position après l'anchor
+    iter = anchor_iter;
+
     // Ajouter le widget au TextView
     add_child_at_anchor(table_grid, anchor);
-    
+
     // Dans GTK4, on utilise set_visible(true) au lieu de show()
     table_grid.set_visible(true);
 }
@@ -1015,23 +1020,19 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         return;         // Document vide
     }
 
-    TextIter iter;
-    buffer.get_start_iter(out iter);
-
-    foreach (PivotNode node in doc.children) {        
+    foreach (PivotNode node in doc.children) {
         if (node is PivotHeading) {
             var heading = (PivotHeading)node;
 
-            // Obtenir un itérateur frais à la fin du buffer  
+            // Obtenir un itérateur frais à la fin du buffer
+            TextIter iter;
             buffer.get_end_iter(out iter);
-            
+
             // Créer une marque pour le début du texte
             TextMark start_mark = buffer.create_mark(null, iter, true);
 
-            // Insérer le texte - utiliser un nouvel itérateur
-            TextIter insert_iter;
-            buffer.get_end_iter(out insert_iter);
-            buffer.insert(ref insert_iter, heading.text + "\n\n", -1);
+            // Insérer le texte
+            buffer.insert(ref iter, heading.text + "\n\n", -1);
 
             // Obtenir de nouveaux itérateurs valides à partir des marques
             TextIter start, end;
@@ -1056,12 +1057,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         else if (node is PivotParagraph) {
             var para = (PivotParagraph)node;
 
-            // Obtenir un itérateur frais à la fin du buffer
-            buffer.get_end_iter(out iter);
-            
-            // Marque pour le début du paragraphe
-            TextMark para_start = buffer.create_mark(null, iter, true);
-
             // Pour chaque segment, appliquer le style approprié, en gérant <u>…</u>
             foreach (var segment in para.segments) {
                 // Obtenir un nouvel itérateur à chaque insertion
@@ -1074,27 +1069,23 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             TextIter final_iter;
             buffer.get_end_iter(out final_iter);
             buffer.insert(ref final_iter, "\n\n", -1);
-
-            // Supprimer la marque du paragraphe
-            buffer.delete_mark(para_start);
         }
         else if (node is PivotList) {
             var list = (PivotList)node;
-            
+
             // Obtenir un itérateur frais à la fin du buffer
-            buffer.get_end_iter(out iter);
-            
-            // Début de plage de liste
-            TextMark list_start = buffer.create_mark(null, iter, true);
             TextIter list_iter;
             buffer.get_end_iter(out list_iter);
+
+            // Début de plage de liste
+            TextMark list_start = buffer.create_mark(null, list_iter, true);
             render_list_to_buffer(list, ref list_iter, 0);
-            
+
             // Ajouter saut de ligne final
             TextIter final_iter;
             buffer.get_end_iter(out final_iter);
             buffer.insert(ref final_iter, "\n", -1);
-            
+
             // Appliquer le tag à toute la liste
             TextIter list_begin_iter, list_end_iter;
             buffer.get_iter_at_mark(out list_begin_iter, list_start);
@@ -1104,85 +1095,109 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         }
         else if (node is PivotLink) {
             var pl = (PivotLink) node;
-            TextMark lmk = buffer.create_mark(null, iter, true);
-            buffer.insert(ref iter, pl.text ?? pl.href ?? "", -1);
             
-            // Mettre à jour la marque de fin
+            // Obtenir un itérateur frais à la fin du buffer
+            TextIter link_iter;
+            buffer.get_end_iter(out link_iter);
             
-            TextIter s;
+            TextMark lmk = buffer.create_mark(null, link_iter, true);
+            buffer.insert(ref link_iter, pl.text ?? pl.href ?? "", -1);
+
+            // Obtenir un nouvel itérateur pour la fin du lien
+            TextIter link_end_iter;
+            buffer.get_end_iter(out link_end_iter);
+            buffer.insert(ref link_end_iter, "\n\n", -1);
+
+            // Appliquer les tags
+            TextIter s, e;
             buffer.get_iter_at_mark(out s, lmk);
-            buffer.apply_tag(tag_link, s, iter);
+            e = s;
+            e.forward_chars((pl.text ?? pl.href ?? "").length);
+            buffer.apply_tag(tag_link, s, e);
+            
             // attacher un tag unique pour href
             string enc = GLib.Uri.escape_string(pl.href ?? "", null, false);
             string unique = "link::u:" + enc;
             Gtk.TextTag url_tag = (Gtk.TextTag) buffer.get_tag_table().lookup(unique);
             if (url_tag == null) url_tag = buffer.create_tag(unique);
-            buffer.apply_tag(url_tag, s, iter);
+            buffer.apply_tag(url_tag, s, e);
             if (!link_tag_names.contains(unique)) link_tag_names.add(unique);
             buffer.delete_mark(lmk);
-            buffer.insert(ref iter, "\n\n", -1);
-            
-            // Mettre à jour la marque de fin
         }
         else if (node is PivotImage) {
             var pi = (PivotImage) node;
             string placeholder = (pi.alt != null && pi.alt != "") ? pi.alt : (pi.src != null ? GLib.Path.get_basename(pi.src) : "Image");
-            TextMark im = buffer.create_mark(null, iter, true);
-            buffer.insert(ref iter, placeholder, -1);
             
-            // Mettre à jour la marque de fin
+            // Obtenir un itérateur frais à la fin du buffer
+            TextIter image_iter;
+            buffer.get_end_iter(out image_iter);
             
-            TextIter s;
+            TextMark im = buffer.create_mark(null, image_iter, true);
+            buffer.insert(ref image_iter, placeholder, -1);
+
+            // Obtenir un nouvel itérateur pour la fin de l'image
+            TextIter image_end_iter;
+            buffer.get_end_iter(out image_end_iter);
+            buffer.insert(ref image_end_iter, "\n\n", -1);
+
+            // Appliquer les tags
+            TextIter s, e;
             buffer.get_iter_at_mark(out s, im);
-            buffer.apply_tag(tag_image, s, iter);
+            e = s;
+            e.forward_chars(placeholder.length);
+            buffer.apply_tag(tag_image, s, e);
+            
             string encs = GLib.Uri.escape_string(pi.src ?? "", null, false);
             Gtk.TextTag src_tag = (Gtk.TextTag) buffer.get_tag_table().lookup("image-src::u:" + encs);
             if (src_tag == null) src_tag = buffer.create_tag("image-src::u:" + encs);
-            buffer.apply_tag(src_tag, s, iter);
+            buffer.apply_tag(src_tag, s, e);
             string srcn = "image-src::u:" + encs; if (!image_src_tag_names.contains(srcn)) image_src_tag_names.add(srcn);
             string enca = GLib.Uri.escape_string(pi.alt ?? "", null, false);
             Gtk.TextTag alt_tag = (Gtk.TextTag) buffer.get_tag_table().lookup("image-alt::u:" + enca);
             if (alt_tag == null) alt_tag = buffer.create_tag("image-alt::u:" + enca);
-            buffer.apply_tag(alt_tag, s, iter);
+            buffer.apply_tag(alt_tag, s, e);
             string altn = "image-alt::u:" + enca; if (!image_alt_tag_names.contains(altn)) image_alt_tag_names.add(altn);
             buffer.delete_mark(im);
-            buffer.insert(ref iter, "\n\n", -1);
-            
-            // Mettre à jour la marque de fin
         }
         else if (node is PivotCodeBlock) {
             var code = (PivotCodeBlock)node;
 
+            // Obtenir un itérateur frais à la fin du buffer
+            TextIter code_iter;
+            buffer.get_end_iter(out code_iter);
+
             // Insérer une ligne vide avant si nécessaire
-            if (!iter.starts_line() && iter.get_line() > 0) {
-                buffer.insert(ref iter, "\n", -1);
+            if (!code_iter.starts_line() && code_iter.get_line() > 0) {
+                buffer.insert(ref code_iter, "\n", -1);
             }
 
             // Marque pour le début du bloc de code
-            TextMark code_start = buffer.create_mark(null, iter, true);
+            TextMark code_start = buffer.create_mark(null, code_iter, true);
 
             // Insérer une indication de langage si disponible
             if (code.language != null && code.language != "") {
-                buffer.insert(ref iter, "[" + code.language + "]\n", -1);
+                buffer.insert(ref code_iter, "[" + code.language + "]\n", -1);
             }
 
             // Insérer le code avec préservation des sauts de ligne
-            buffer.insert(ref iter, code.code, -1);
+            buffer.insert(ref code_iter, code.code, -1);
 
             // Ajouter un saut de ligne après le code
-            if (!iter.ends_line()) {
-                buffer.insert(ref iter, "\n", -1);
+            if (!code_iter.ends_line()) {
+                buffer.insert(ref code_iter, "\n", -1);
             }
-            buffer.insert(ref iter, "\n", -1);
-            
-            // Mettre à jour la marque de fin
+            buffer.insert(ref code_iter, "\n", -1);
+
+            // Récupérer un itérateur valide pour la fin
+            TextIter code_end_iter;
+            buffer.get_end_iter(out code_end_iter);
 
             // Récupérer un itérateur valide pour le début
             TextIter start;
             buffer.get_iter_at_mark(out start, code_start);
 
             // Appliquer le formatage au bloc de code
-            buffer.apply_tag(tag_code, start, iter);
+            buffer.apply_tag(tag_code, start, code_end_iter);
 
             // Supprimer la marque
             buffer.delete_mark(code_start);
@@ -1190,31 +1205,37 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         else if (node is PivotQuote) {
             var quote = (PivotQuote)node;
 
+            // Obtenir un itérateur frais à la fin du buffer
+            TextIter quote_iter;
+            buffer.get_end_iter(out quote_iter);
+
             // Insérer une ligne vide avant si nécessaire
-            if (!iter.starts_line() && iter.get_line() > 0) {
-                buffer.insert(ref iter, "\n", -1);
+            if (!quote_iter.starts_line() && quote_iter.get_line() > 0) {
+                buffer.insert(ref quote_iter, "\n", -1);
             }
 
             // Marque pour le début de la citation
-            TextMark quote_start = buffer.create_mark(null, iter, true);
+            TextMark quote_start = buffer.create_mark(null, quote_iter, true);
 
             // Insérer la citation (avec préfixe visuel)
-            buffer.insert(ref iter, "❝ " + quote.text, -1);
+            buffer.insert(ref quote_iter, "❝ " + quote.text, -1);
 
             // Ajouter un saut de ligne après la citation
-            if (!iter.ends_line()) {
-                buffer.insert(ref iter, "\n", -1);
+            if (!quote_iter.ends_line()) {
+                buffer.insert(ref quote_iter, "\n", -1);
             }
-            buffer.insert(ref iter, "\n", -1);
-            
-            // Mettre à jour la marque de fin
+            buffer.insert(ref quote_iter, "\n", -1);
+
+            // Récupérer un itérateur valide pour la fin
+            TextIter quote_end_iter;
+            buffer.get_end_iter(out quote_end_iter);
 
             // Récupérer un itérateur valide pour le début
             TextIter start;
             buffer.get_iter_at_mark(out start, quote_start);
 
             // Appliquer le formatage à la citation
-            buffer.apply_tag(tag_quote, start, iter);
+            buffer.apply_tag(tag_quote, start, quote_end_iter);
 
             // Supprimer la marque
             buffer.delete_mark(quote_start);
@@ -1222,54 +1243,60 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         else if (node is PivotTable) {
             var table = (PivotTable)node;
 
+            // Obtenir un itérateur frais à la fin du buffer
+            TextIter table_iter;
+            buffer.get_end_iter(out table_iter);
+
             if (table.rows.size == 0) {
-                buffer.insert(ref iter, "\n[Tableau vide]\n\n", -1);
-                // Mettre à jour la marque de fin
+                buffer.insert(ref table_iter, "\n[Tableau vide]\n\n", -1);
                 continue;
             }
 
             // Insérer un saut de ligne avant le tableau
-            if (!iter.starts_line()) {
-                buffer.insert(ref iter, "\n", -1);
+            if (!table_iter.starts_line()) {
+                buffer.insert(ref table_iter, "\n", -1);
             }
-            buffer.insert(ref iter, "\n", -1);
-            
+            buffer.insert(ref table_iter, "\n", -1);
+
             // Utiliser la nouvelle méthode de rendu dynamique
-            insert_dynamic_table_widget(table, ref iter);
-            
-            buffer.insert(ref iter, "\n", -1);
-            
-            // Mettre à jour la marque de fin
+            insert_dynamic_table_widget(table, ref table_iter);
+
+            // Obtenir un nouvel itérateur à la fin pour continuer
+            TextIter table_end_iter;
+            buffer.get_end_iter(out table_end_iter);
+            buffer.insert(ref table_end_iter, "\n", -1);
         }
         else if (node is PivotRule) {
-            // Créer un trait de séparation qui s'étend sur toute la largeur
-            TextMark rule_start = buffer.create_mark(null, iter, true);
+            // Obtenir un itérateur frais à la fin du buffer
+            TextIter rule_iter;
+            buffer.get_end_iter(out rule_iter);
             
+            // Créer un trait de séparation qui s'étend sur toute la largeur
+            TextMark rule_start = buffer.create_mark(null, rule_iter, true);
+
             // Utiliser la fonction utilitaire pour calculer la largeur optimale
             int rule_length = calculate_rule_length();
-            
+
             // Créer un trait continu et élégant avec des caractères Unicode
             StringBuilder rule_builder = new StringBuilder();
             for (int i = 0; i < rule_length; i++) {
                 rule_builder.append_unichar('─');
             }
             string rule_line = rule_builder.str;
-            
-            buffer.insert(ref iter, rule_line + "\n\n", -1);
-            
-            // Mettre à jour la marque de fin
-            
+
+            buffer.insert(ref rule_iter, rule_line + "\n\n", -1);
+
             // Appliquer le tag de règle
-            TextIter start;
+            TextIter start, end;
             buffer.get_iter_at_mark(out start, rule_start);
-            TextIter end = start;
+            end = start;
             end.forward_chars(rule_line.length);
             buffer.apply_tag(tag_rule, start, end);
-            
+
             buffer.delete_mark(rule_start);
         }
     }
-    
+
     // Supprimer la marque de fin
 
     // Rien à nettoyer: les marqueurs Markdown sont supprimés en amont, et <u>…</u> est géré à l’insertion
@@ -1542,24 +1569,24 @@ public PivotDocument get_pivot_document() {
             }
             // Construire des segments enrichis pour l'item à partir du buffer courant
             var item = new PivotListItem();
-            
+
             // Solution 2 : Détection précoce des couleurs et formatage
             TextIter search_start = line_start;
             TextIter search_end = line_end;
-            
+
             // Scanner toute la ligne pour détecter la présence de formatage ou couleurs
             bool found_formatting = false;
             TextIter scan_pos = search_start;
-            
+
             while (!scan_pos.equal(search_end)) {
                 // Vérifier le formatage basique
-                if (scan_pos.has_tag(tag_bold) || scan_pos.has_tag(tag_italic) || 
-                    scan_pos.has_tag(tag_strikethrough) || scan_pos.has_tag(tag_code) || 
+                if (scan_pos.has_tag(tag_bold) || scan_pos.has_tag(tag_italic) ||
+                    scan_pos.has_tag(tag_strikethrough) || scan_pos.has_tag(tag_code) ||
                     scan_pos.has_tag(tag_underline)) {
                     found_formatting = true;
                     break;
                 }
-                
+
                 // Vérifier couleurs de texte
                 foreach (var name in fg_tag_names) {
                     var t_fg = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
@@ -1569,7 +1596,7 @@ public PivotDocument get_pivot_document() {
                     }
                 }
                 if (found_formatting) break;
-                
+
                 // Vérifier couleurs de fond
                 foreach (var name in bg_tag_names) {
                     var t_bg = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
@@ -1579,18 +1606,18 @@ public PivotDocument get_pivot_document() {
                     }
                 }
                 if (found_formatting) break;
-                
+
                 if (!scan_pos.forward_char()) break;
             }
-            
+
             if (found_formatting) {
                 // Il y a du formatage, utiliser extract_formatted_segments avec le texte complet de la ligne
                 string full_line_text = buffer.get_text(search_start, search_end, false);
                 var formatted_segments = extract_formatted_segments(full_line_text, search_start, search_end);
-                
+
                 // Nettoyer les segments pour enlever les préfixes de liste
                 clean_list_prefix_from_segments(formatted_segments, is_bullet, is_ordered);
-                
+
                 item.segments = formatted_segments;
             } else {
                 // Pas de formatage, utiliser la logique simple
@@ -1599,7 +1626,7 @@ public PivotDocument get_pivot_document() {
                 segments.add(seg);
                 item.segments = segments;
             }
-            
+
             stacks.get(stacks.size - 1).items.add(item);
         }
         if (root.items.size > 0) doc.children.add(root);
@@ -1898,7 +1925,7 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
         bool has_tag = segment_end.has_tag(tag_bold) || segment_end.has_tag(tag_italic) ||
                        segment_end.has_tag(tag_strikethrough) || segment_end.has_tag(tag_code) ||
                        segment_end.has_tag(tag_underline) || segment_end.has_tag(tag_link);
-        
+
         // Détecter les couleurs actuelles
         string? current_fg_color = null;
         string? current_bg_color = null;
@@ -1947,8 +1974,8 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
             }
 
             // Si le formatage OU les couleurs changent, arrêter
-            if (has_tag != current_has_tag || 
-                current_fg_color != new_fg_color || 
+            if (has_tag != current_has_tag ||
+                current_fg_color != new_fg_color ||
                 current_bg_color != new_bg_color) {
                 break;
             }
@@ -2008,7 +2035,7 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
             }
             seg.link_href = found;
         }
-        
+
         // Extraire les couleurs des tags dynamiques
         foreach (var name in fg_tag_names) {
             var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
@@ -2024,7 +2051,7 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
                 break;
             }
         }
-        
+
         segments.add(seg);
 
         // Passer au segment suivant
@@ -2054,10 +2081,10 @@ private bool range_has_tag(Gtk.TextIter start, Gtk.TextIter end, Gtk.TextTag tag
 // Helper pour nettoyer les préfixes de liste des segments
 private void clean_list_prefix_from_segments(Gee.List<TextSegment> segments, bool is_bullet, bool is_ordered) {
     if (segments.size == 0) return;
-    
+
     var first_segment = segments.get(0);
     string text = first_segment.text;
-    
+
     if (is_bullet) {
         // Enlever "• " ou "- " au début
         if (text.has_prefix("• ")) {
@@ -2086,7 +2113,7 @@ private void clean_list_prefix_from_segments(Gee.List<TextSegment> segments, boo
             }
         }
     }
-    
+
     // Enlever les espaces d'indentation au début si présent
     first_segment.text = first_segment.text.strip();
 }
@@ -2256,7 +2283,7 @@ public string? get_current_font_family() {
     var buffer = this.get_buffer();
     TextIter iter;
     buffer.get_iter_at_mark(out iter, buffer.get_insert());
-    
+
     // Parcourir les tags actifs au curseur
     foreach (var tag in iter.get_tags()) {
         // Vérifier d'abord la propriété family
@@ -2268,7 +2295,7 @@ public string? get_current_font_family() {
                 return family;
             }
         }
-        
+
         // Fallback : extraire de font-desc si disponible
         Value font_desc_value = Value(typeof(string));
         tag.get_property("font-desc", ref font_desc_value);
@@ -2291,7 +2318,7 @@ public int get_current_font_size() {
     var buffer = this.get_buffer();
     TextIter iter;
     buffer.get_iter_at_mark(out iter, buffer.get_insert());
-    
+
     // Parcourir les tags actifs au curseur
     foreach (var tag in iter.get_tags()) {
         Value size_value = Value(typeof(int));
@@ -2308,7 +2335,7 @@ public Gdk.RGBA? get_current_foreground_color() {
     var buffer = this.get_buffer();
     TextIter iter;
     buffer.get_iter_at_mark(out iter, buffer.get_insert());
-    
+
     // Parcourir les tags actifs au curseur
     foreach (var tag in iter.get_tags()) {
         Value color_value = Value(typeof(Gdk.RGBA));
@@ -2328,7 +2355,7 @@ public Gdk.RGBA? get_current_background_color() {
     var buffer = this.get_buffer();
     TextIter iter;
     buffer.get_iter_at_mark(out iter, buffer.get_insert());
-    
+
     // Parcourir les tags actifs au curseur
     foreach (var tag in iter.get_tags()) {
         Value color_value = Value(typeof(Gdk.RGBA));
@@ -2356,7 +2383,7 @@ public void apply_font_and_size(string? font_family, int size) {
         });
         return;
     }
-    
+
     try {
         TextIter start, end;
         if (buffer.get_selection_bounds(out start, out end)) {
@@ -2365,7 +2392,7 @@ public void apply_font_and_size(string? font_family, int size) {
                 warning("Sélection invalide détectée");
                 return;
             }
-            
+
             // Mode ultra-sécurisé: toujours différer même pour les sélections
             Idle.add(() => {
                 try {
@@ -2412,7 +2439,7 @@ public void apply_font_and_size(string? font_family, int size) {
             // en créant un tag temporaire qui sera utilisé pour le prochain texte saisi
             current_font_family = font_family;
             current_font_size = size;
-            
+
             // Marquer que nous avons des attributs en attente
             has_pending_attributes = true;
         }
