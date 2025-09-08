@@ -699,7 +699,6 @@ public void insert_table(int rows, int cols) {
 
 // Gestionnaire de redimensionnement pour mettre à jour les traits horizontaux
 private void on_size_changed() {
-    print("WysiwygEditor - Redimensionnement détecté\n");
     update_existing_horizontal_rules();
 }
 
@@ -746,8 +745,6 @@ private void update_existing_horizontal_rules() {
             // Remplacer le trait existant par le nouveau
             buffer.delete(ref rule_start, ref rule_end);
             buffer.insert_with_tags(ref rule_start, rule_text.str, -1, tag_rule);
-            
-            print("WysiwygEditor - Trait mis à jour avec %d caractères\n", new_length);
         }
         
         // Continuer la recherche depuis la fin du match actuel
@@ -778,9 +775,6 @@ private int calculate_rule_length() {
         widget_width = 600; // Largeur minimale raisonnable
     }
     
-    // Debug : afficher la largeur calculée
-    print("WysiwygEditor - Largeur widget: %d pixels\n", widget_width);
-    
     // Calculer le nombre de caractères
     // Largeur d'un caractère ─ est approximativement 8 pixels avec la police par défaut
     int char_width = 7;
@@ -790,8 +784,6 @@ private int calculate_rule_length() {
     // Assurer une longueur minimum et maximum raisonnables
     if (rule_length < 40) rule_length = 80;   // Minimum pour petites fenêtres
     if (rule_length > 200) rule_length = 200; // Maximum pour très grandes fenêtres
-    
-    print("WysiwygEditor - Longueur trait calculée: %d caractères\n", rule_length);
     
     return rule_length;
 }
@@ -1018,13 +1010,10 @@ private void render_pivot_to_buffer(PivotDocument doc) {
 
     TextIter iter;
     buffer.get_start_iter(out iter);
-    
-    // Créer une marque pour suivre la position de fin d'écriture
-    TextMark end_mark = buffer.create_mark(null, iter, false);
 
     foreach (PivotNode node in doc.children) {
-        // Obtenir un itérateur valide depuis la marque
-        buffer.get_iter_at_mark(out iter, end_mark);
+        // Obtenir un itérateur frais à la fin du buffer
+        buffer.get_end_iter(out iter);
         
         if (node is PivotHeading) {
             var heading = (PivotHeading)node;
@@ -1034,9 +1023,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
 
             // Insérer le texte
             buffer.insert(ref iter, heading.text + "\n\n", -1);
-            
-            // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
 
             // Obtenir de nouveaux itérateurs valides à partir des marques
             TextIter start, end;
@@ -1071,9 +1057,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
 
             // Ajouter deux sauts de ligne après le paragraphe
             buffer.insert(ref iter, "\n\n", -1);
-            
-            // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
 
             // Supprimer la marque du paragraphe
             buffer.delete_mark(para_start);
@@ -1084,9 +1067,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             TextMark list_start = buffer.create_mark(null, iter, true);
             render_list_to_buffer(list, ref iter, 0);
             buffer.insert(ref iter, "\n", -1);
-            
-            // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
             
             TextIter list_begin_iter;
             buffer.get_iter_at_mark(out list_begin_iter, list_start);
@@ -1099,7 +1079,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.insert(ref iter, pl.text ?? pl.href ?? "", -1);
             
             // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
             
             TextIter s;
             buffer.get_iter_at_mark(out s, lmk);
@@ -1115,7 +1094,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.insert(ref iter, "\n\n", -1);
             
             // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
         }
         else if (node is PivotImage) {
             var pi = (PivotImage) node;
@@ -1124,7 +1102,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.insert(ref iter, placeholder, -1);
             
             // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
             
             TextIter s;
             buffer.get_iter_at_mark(out s, im);
@@ -1143,7 +1120,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.insert(ref iter, "\n\n", -1);
             
             // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
         }
         else if (node is PivotCodeBlock) {
             var code = (PivotCodeBlock)node;
@@ -1171,7 +1147,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.insert(ref iter, "\n", -1);
             
             // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
 
             // Récupérer un itérateur valide pour le début
             TextIter start;
@@ -1204,7 +1179,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.insert(ref iter, "\n", -1);
             
             // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
 
             // Récupérer un itérateur valide pour le début
             TextIter start;
@@ -1222,7 +1196,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             if (table.rows.size == 0) {
                 buffer.insert(ref iter, "\n[Tableau vide]\n\n", -1);
                 // Mettre à jour la marque de fin
-                buffer.move_mark(end_mark, iter);
                 continue;
             }
 
@@ -1238,7 +1211,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.insert(ref iter, "\n", -1);
             
             // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
         }
         else if (node is PivotRule) {
             // Créer un trait de séparation qui s'étend sur toute la largeur
@@ -1257,7 +1229,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             buffer.insert(ref iter, rule_line + "\n\n", -1);
             
             // Mettre à jour la marque de fin
-            buffer.move_mark(end_mark, iter);
             
             // Appliquer le tag de règle
             TextIter start;
@@ -1271,7 +1242,6 @@ private void render_pivot_to_buffer(PivotDocument doc) {
     }
     
     // Supprimer la marque de fin
-    buffer.delete_mark(end_mark);
 
     // Rien à nettoyer: les marqueurs Markdown sont supprimés en amont, et <u>…</u> est géré à l’insertion
 }
