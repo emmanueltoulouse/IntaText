@@ -995,13 +995,6 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
     // Dans GTK4, on utilise set_visible(true) au lieu de show()
     table_grid.set_visible(true);
 }
-// Méthode d'aide pour insérer du texte de manière sécurisée à la fin du buffer
-private void safe_insert_at_end(string text) {
-    TextIter end_iter;
-    buffer.get_end_iter(out end_iter);
-    buffer.insert(ref end_iter, text, -1);
-}
-
 public void load_pivot_document(PivotDocument doc) {
     this.pivot_doc = doc;
     render_pivot_to_buffer(doc);
