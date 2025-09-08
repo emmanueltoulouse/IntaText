@@ -281,6 +281,69 @@ public PivotDocument to_pivot(string content, string path) {
             continue;
         }
 
+        // Tableaux : ligne avec | et potentiellement ligne de séparation suivante
+        if (t.contains("|")) {
+            flush_paragraph();
+            var table = new PivotTable();
+            
+            // Parser la première ligne (headers)
+            var header_cells = t.split("|");
+            var header_row = new Gee.ArrayList<string>();
+            for (int j = 0; j < header_cells.length; j++) {
+                string cell = header_cells[j].strip();
+                if (cell != "") {
+                    header_row.add(cell);
+                }
+            }
+            if (header_row.size > 0) {
+                table.rows.add(header_row);
+            }
+            
+            i++; // passer à la ligne suivante
+            
+            // Vérifier si la ligne suivante est une ligne de séparation (avec -, : et |)
+            bool has_separator = false;
+            if (i < lines.length) {
+                string sep_line = lines[i].strip();
+                if (sep_line.contains("|") && (sep_line.contains("-") || sep_line.contains(":"))) {
+                    has_separator = true;
+                    i++; // ignorer la ligne de séparation
+                }
+            }
+            
+            // Continuer à parser les lignes de données
+            while (i < lines.length) {
+                string row_line = lines[i].strip();
+                if (row_line == "" || !row_line.contains("|")) {
+                    break;
+                }
+                
+                var data_cells = row_line.split("|");
+                var data_row = new Gee.ArrayList<string>();
+                for (int j = 0; j < data_cells.length; j++) {
+                    string cell = data_cells[j].strip();
+                    if (cell != "") {
+                        data_row.add(cell);
+                    }
+                }
+                if (data_row.size > 0) {
+                    table.rows.add(data_row);
+                }
+                i++;
+            }
+            
+            pivot.children.add(table);
+            continue;
+        }
+
+        // Règles horizontales: ---, ***, ___
+        if (t == "---" || t == "***" || t == "___") {
+            flush_paragraph();
+            pivot.children.add(new PivotRule());
+            i++;
+            continue;
+        }
+
     // Paragraphe standard: accumuler
         para_buf.append(raw + "\n");
         i++;

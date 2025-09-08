@@ -155,3 +155,23 @@ executable('md_rt',
   dependencies: [gee_dep, json_dep],
   install: false
 )
+
+# Outil de round-trip Markdown -> Pivot -> WYSIWYG -> Pivot -> Markdown (ligne de commande)
+md_wysiwyg_rt_sources = [
+  'src/model/document/PivotDocument.vala',
+  'src/model/document/DocumentConverter.vala',
+  'src/model/document/PivotDocumentConverter.vala',
+  'src/model/document/TextDocumentConverter.vala',
+  'src/model/document/MarkdownDocumentConverter.vala',
+  'src/model/document/HtmlDocumentConverter.vala',
+  'src/view/widgets/WysiwygEditor.vala',
+  'src/model/EditorModel.vala',
+  'tools/md_wysiwyg_roundtrip.vala',
+  resources
+]
+
+executable('md_wysiwyg_rt',
+  sources: md_wysiwyg_rt_sources,
+  dependencies: [gtk_dep, adw_dep, gee_dep, json_dep, gio_dep],
+  install: false
+)

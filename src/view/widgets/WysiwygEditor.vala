@@ -18,6 +18,10 @@ private Gtk.TextTag tag_link;
 private Gtk.TextTag tag_list;
 private Gtk.TextTag tag_underline;
 private Gtk.TextTag tag_image;
+private Gtk.TextTag tag_rule;
+private Gtk.TextTag tag_table_header;
+private Gtk.TextTag tag_table_cell;
+private Gtk.TextTag tag_table_border;
 
 private Gtk.CssProvider css_provider;
 // Registre local des noms de tags dynamiques créés (pour retrouver href/src/alt)
@@ -27,6 +31,11 @@ private Gee.ArrayList<string> link_tag_names = new Gee.ArrayList<string>();
     private Gee.ArrayList<string> bg_tag_names = new Gee.ArrayList<string>();
 private Gee.ArrayList<string> image_src_tag_names = new Gee.ArrayList<string>();
 private Gee.ArrayList<string> image_alt_tag_names = new Gee.ArrayList<string>();
+
+// Variables pour gérer les attributs en attente (quand pas de sélection)
+private string? current_font_family = null;
+private int current_font_size = 0;
+private bool has_pending_attributes = false;
 
 public signal void document_changed(PivotDocument doc);
 public signal void buffer_changed();
@@ -50,6 +59,16 @@ public WysiwygEditor() {
 
     // Préparer les tags de formatage
     ensure_tags();
+
+    // Gestionnaire pour appliquer les attributs en attente lors de la saisie
+    buffer.insert_text.connect((ref iter, text, len) => {
+        if (has_pending_attributes) {
+            apply_pending_attributes(iter, text.length);
+        }
+    });
+    
+    // Gestionnaire pour redimensionnement de la fenêtre (mise à jour des traits)
+    this.notify["allocated-width"].connect(this.on_size_changed);
 
     // Commenté temporairement
     // buffer.changed.connect(() => {
@@ -112,6 +131,90 @@ private void ensure_tags() {
     // Image (marqueur générique)
     tag_image = (Gtk.TextTag) table.lookup("image");
     if (tag_image == null) tag_image = buffer.create_tag("image");
+
+    // Rule (trait de séparation horizontal)
+    tag_rule = (Gtk.TextTag) table.lookup("rule");
+    if (tag_rule == null) {
+        tag_rule = buffer.create_tag("rule", 
+                                   "foreground", "#CCCCCC",
+                                   "size", 12000,
+                                   "weight", Pango.Weight.LIGHT);
+    }
+
+    // Table header (en-têtes grisés)
+    tag_table_header = (Gtk.TextTag) table.lookup("table_header");
+    if (tag_table_header == null) {
+        tag_table_header = buffer.create_tag("table_header",
+                                           "background", "#f0f0f0",
+                                           "weight", Pango.Weight.BOLD,
+                                           "foreground", "#333333");
+    }
+
+    // Table cell (cellules normales)
+    tag_table_cell = (Gtk.TextTag) table.lookup("table_cell");
+    if (tag_table_cell == null) {
+        tag_table_cell = buffer.create_tag("table_cell",
+                                         "background", "white",
+                                         "foreground", "#000000");
+    }
+
+    // Table border (bordures de tableau)
+    tag_table_border = (Gtk.TextTag) table.lookup("table_border");
+    if (tag_table_border == null) {
+        tag_table_border = buffer.create_tag("table_border",
+                                           "foreground", "#CCCCCC",
+                                           "family", "monospace");
+    }
+}
+
+// Applique les attributs en attente au texte qui vient d'être inséré
+private void apply_pending_attributes(TextIter iter, int text_length) {
+    if (!has_pending_attributes) return;
+    
+    try {
+        // Vérification de sécurité des paramètres
+        if (text_length <= 0) return;
+        
+        // Calculer les itérateurs de début et fin du texte inséré
+        TextIter start = iter;
+        if (!start.backward_chars(text_length)) {
+            warning("Impossible de déplacer l'itérateur de début");
+            return;
+        }
+        
+        // Vérification que les itérateurs sont valides
+        if (!start.is_start() && !start.is_end() && !iter.is_start() && !iter.is_end()) {
+            // Appliquer la police si définie
+            if (current_font_family != null && current_font_family.strip() != "") {
+                try {
+                    var font_tag = buffer.create_tag(null, "family", current_font_family);
+                    if (font_tag != null) {
+                        buffer.apply_tag(font_tag, start, iter);
+                    }
+                } catch (Error font_error) {
+                    warning("Erreur lors de l'application de la police: %s", font_error.message);
+                }
+            }
+            
+            // Appliquer la taille si définie
+            if (current_font_size > 0) {
+                try {
+                    var size_tag = buffer.create_tag(null, "size-points", current_font_size);
+                    if (size_tag != null) {
+                        buffer.apply_tag(size_tag, start, iter);
+                    }
+                } catch (Error size_error) {
+                    warning("Erreur lors de l'application de la taille: %s", size_error.message);
+                }
+            }
+        }
+        
+        // Réinitialiser les attributs en attente après application
+        // Note: on garde les attributs pour la suite de la saisie
+        // has_pending_attributes = false;
+    } catch (Error e) {
+        warning("Erreur lors de l'application des attributs en attente: %s", e.message);
+    }
 }
 
 // Exemple d'utilisation sécurisée d'un tag
@@ -594,6 +697,312 @@ public void insert_table(int rows, int cols) {
     // plus sophistiquée pour l'édition de tableau
 }
 
+// Gestionnaire de redimensionnement pour mettre à jour les traits horizontaux
+private void on_size_changed() {
+    print("WysiwygEditor - Redimensionnement détecté\n");
+    update_existing_horizontal_rules();
+}
+
+// Met à jour tous les traits horizontaux existants avec la nouvelle largeur
+private void update_existing_horizontal_rules() {
+    // Calculer la nouvelle longueur
+    int new_length = calculate_rule_length();
+    
+    // Créer le nouveau texte du trait
+    var rule_text = new StringBuilder();
+    for (int i = 0; i < new_length; i++) {
+        rule_text.append_unichar('─');
+    }
+    
+    // Parcourir tout le buffer pour trouver les traits existants
+    Gtk.TextIter start_iter, end_iter;
+    buffer.get_start_iter(out start_iter);
+    buffer.get_end_iter(out end_iter);
+    
+    Gtk.TextIter match_start, match_end;
+    while (start_iter.forward_search("─", Gtk.TextSearchFlags.TEXT_ONLY, out match_start, out match_end, end_iter)) {
+        // Vérifier si ce trait a le tag_rule
+        if (match_start.has_tag(tag_rule)) {
+            // Trouver le début et la fin complète du trait
+            Gtk.TextIter rule_start = match_start;
+            Gtk.TextIter rule_end = match_end;
+            
+            // Étendre vers la gauche
+            while (rule_start.backward_char() && rule_start.get_char() == '─') {
+                // Continue
+            }
+            if (rule_start.get_char() != '─') {
+                rule_start.forward_char();
+            }
+            
+            // Étendre vers la droite
+            while (rule_end.forward_char() && rule_end.get_char() == '─') {
+                // Continue
+            }
+            if (rule_end.get_char() != '─') {
+                rule_end.backward_char();
+            }
+            
+            // Remplacer le trait existant par le nouveau
+            buffer.delete(ref rule_start, ref rule_end);
+            buffer.insert_with_tags(ref rule_start, rule_text.str, -1, tag_rule);
+            
+            print("WysiwygEditor - Trait mis à jour avec %d caractères\n", new_length);
+        }
+        
+        // Continuer la recherche depuis la fin du match actuel
+        start_iter = match_end;
+    }
+}
+
+// Calcule la largeur optimale pour un trait horizontal en fonction de la taille du widget
+private int calculate_rule_length() {
+    // Obtenir la largeur réelle du widget
+    int widget_width = this.get_width();
+    
+    // Si get_width() ne fonctionne pas, essayer get_allocated_width()
+    if (widget_width <= 0) {
+        widget_width = this.get_allocated_width();
+    }
+    
+    // Si toujours pas de largeur valide, utiliser une estimation basée sur le parent
+    if (widget_width <= 0) {
+        var parent = this.get_parent();
+        if (parent != null) {
+            widget_width = parent.get_width();
+        }
+    }
+    
+    // Valeur de secours si tout échoue
+    if (widget_width <= 0) {
+        widget_width = 600; // Largeur minimale raisonnable
+    }
+    
+    // Debug : afficher la largeur calculée
+    print("WysiwygEditor - Largeur widget: %d pixels\n", widget_width);
+    
+    // Calculer le nombre de caractères
+    // Largeur d'un caractère ─ est approximativement 8 pixels avec la police par défaut
+    int char_width = 7;
+    int available_width = widget_width - 80; // Marges, padding, scrollbar
+    int rule_length = available_width / char_width;
+    
+    // Assurer une longueur minimum et maximum raisonnables
+    if (rule_length < 40) rule_length = 80;   // Minimum pour petites fenêtres
+    if (rule_length > 200) rule_length = 200; // Maximum pour très grandes fenêtres
+    
+    print("WysiwygEditor - Longueur trait calculée: %d caractères\n", rule_length);
+    
+    return rule_length;
+}
+
+public void insert_horizontal_rule() {
+    ensure_tags();
+    
+    // Obtenir la position actuelle du curseur
+    TextIter iter;
+    buffer.get_iter_at_mark(out iter, buffer.get_insert());
+
+    // S'assurer qu'on est au début d'une ligne
+    if (!iter.starts_line()) {
+        buffer.insert(ref iter, "\n", -1);
+    }
+
+    // Marque pour le début de la règle
+    TextMark rule_start = buffer.create_mark(null, iter, true);
+    
+    // Calculer la largeur optimale
+    int rule_length = calculate_rule_length();
+    
+    // Créer un trait continu et élégant avec des caractères Unicode
+    StringBuilder rule_builder = new StringBuilder();
+    for (int i = 0; i < rule_length; i++) {
+        rule_builder.append_unichar('─');
+    }
+    string rule_line = rule_builder.str;
+    
+    buffer.insert(ref iter, rule_line + "\n\n", -1);
+    
+    // Appliquer le tag de règle
+    TextIter start;
+    buffer.get_iter_at_mark(out start, rule_start);
+    TextIter end = start;
+    end.forward_chars(rule_line.length);
+    buffer.apply_tag(tag_rule, start, end);
+    
+    buffer.delete_mark(rule_start);
+}
+
+public void insert_table_object(PivotTable table) {
+    ensure_tags();
+    
+    // Obtenir la position actuelle du curseur
+    TextIter iter;
+    buffer.get_iter_at_mark(out iter, buffer.get_insert());
+
+    // S'assurer qu'on est au début d'une ligne
+    if (!iter.starts_line()) {
+        buffer.insert(ref iter, "\n", -1);
+    }
+
+    // Insérer une ligne vide avant le tableau
+    buffer.insert(ref iter, "\n", -1);
+    
+    // Créer et insérer un widget de tableau dynamique
+    insert_dynamic_table_widget(table, ref iter);
+    
+    // Ajouter un saut de ligne après le tableau
+    buffer.insert(ref iter, "\n", -1);
+    
+    // Positionner le curseur après le tableau
+    buffer.place_cursor(iter);
+}
+
+// Nouvelle méthode pour insérer un widget de tableau dynamique
+private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
+    if (table.rows.size == 0) return;
+
+    // Déterminer le nombre de colonnes
+    int num_cols = 0;
+    foreach (var row in table.rows) {
+        if (row != null && row.size > num_cols) {
+            num_cols = row.size;
+        }
+    }
+    
+    if (num_cols == 0) return;
+
+    // Créer un Grid GTK pour le tableau
+    var table_grid = new Gtk.Grid();
+    table_grid.set_column_spacing(0);
+    table_grid.set_row_spacing(0);
+    table_grid.set_margin_top(8);
+    table_grid.set_margin_bottom(8);
+    table_grid.set_margin_start(8);
+    table_grid.set_margin_end(8);
+    table_grid.add_css_class("table-grid");
+
+    // Ajouter des styles CSS pour les bordures continues
+    var table_css_provider = new Gtk.CssProvider();
+    try {
+        string css_content = @"
+            .table-cell {
+                border: 1px solid #cccccc;
+                background: white;
+                padding: 8px;
+                min-width: 80px;
+                font-family: inherit;
+            }
+            .table-header {
+                border: 1px solid #888888;
+                background: #f0f0f0;
+                font-weight: bold;
+                padding: 10px;
+                min-width: 80px;
+                font-family: inherit;
+            }
+            .table-grid {
+                margin: 8px 0;
+            }
+        ";
+        table_css_provider.load_from_string(css_content);
+        Gtk.StyleContext.add_provider_for_display(
+            this.get_display(), 
+            table_css_provider, 
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        );
+    } catch (Error e) {
+        warning("Impossible de charger le CSS du tableau : %s", e.message);
+    }
+
+    // Créer les cellules du tableau
+    var entries = new Gtk.Entry[table.rows.size, num_cols];
+    
+    for (int i = 0; i < table.rows.size; i++) {
+        var row = table.rows[i];
+        bool is_header = (i == 0);
+        
+        for (int j = 0; j < num_cols; j++) {
+            var entry = new Gtk.Entry();
+            entry.set_has_frame(false);
+            
+            // Contenu de la cellule
+            if (row != null && j < row.size && row[j] != null) {
+                entry.set_text(row[j]);
+            } else {
+                entry.set_text("");
+            }
+            
+            // Appliquer le style approprié
+            if (is_header) {
+                entry.add_css_class("table-header");
+            } else {
+                entry.add_css_class("table-cell");
+            }
+            
+            // Stocker la référence pour les callbacks
+            entries[i, j] = entry;
+            
+            // Connecter le signal de changement de texte pour redimensionnement dynamique
+            int row_idx = i, col_idx = j;
+            entry.changed.connect(() => {
+                // Mettre à jour le modèle de données
+                if (table.rows.size > row_idx && table.rows[row_idx] != null && table.rows[row_idx].size > col_idx) {
+                    table.rows[row_idx][col_idx] = entry.get_text();
+                }
+                
+                // Calculer la nouvelle largeur nécessaire pour toute la colonne
+                int max_width_needed = 10; // Largeur minimale
+                for (int r = 0; r < table.rows.size; r++) {
+                    if (entries[r, col_idx] != null) {
+                        int content_width = entries[r, col_idx].get_text().length + 2; // +2 pour padding
+                        if (content_width > max_width_needed) {
+                            max_width_needed = content_width;
+                        }
+                    }
+                }
+                
+                // Limiter la largeur maximale
+                if (max_width_needed > 50) max_width_needed = 50;
+                
+                // Ajuster la largeur de toutes les cellules de cette colonne
+                for (int r = 0; r < table.rows.size; r++) {
+                    if (entries[r, col_idx] != null) {
+                        entries[r, col_idx].set_width_chars(max_width_needed);
+                    }
+                }
+            });
+            
+            // Largeur initiale basée sur le contenu maximum de la colonne
+            int initial_width = 10; // Largeur minimale
+            
+            // Calculer la largeur optimale pour cette colonne
+            for (int r = 0; r < table.rows.size; r++) {
+                if (table.rows[r] != null && col_idx < table.rows[r].size && table.rows[r][col_idx] != null) {
+                    int content_width = table.rows[r][col_idx].length + 2;
+                    if (content_width > initial_width) {
+                        initial_width = content_width;
+                    }
+                }
+            }
+            
+            if (initial_width > 50) initial_width = 50; // Largeur maximale
+            entry.set_width_chars(initial_width);
+            
+            // Ajouter l'entry au grid
+            table_grid.attach(entry, j, i, 1, 1);
+        }
+    }
+
+    // Créer un TextChildAnchor pour insérer le widget
+    var anchor = buffer.create_child_anchor(iter);
+    
+    // Ajouter le widget au TextView
+    add_child_at_anchor(table_grid, anchor);
+    
+    // Dans GTK4, on utilise set_visible(true) au lieu de show()
+    table_grid.set_visible(true);
+}
 public void load_pivot_document(PivotDocument doc) {
     this.pivot_doc = doc;
     render_pivot_to_buffer(doc);
@@ -609,8 +1018,14 @@ private void render_pivot_to_buffer(PivotDocument doc) {
 
     TextIter iter;
     buffer.get_start_iter(out iter);
+    
+    // Créer une marque pour suivre la position de fin d'écriture
+    TextMark end_mark = buffer.create_mark(null, iter, false);
 
     foreach (PivotNode node in doc.children) {
+        // Obtenir un itérateur valide depuis la marque
+        buffer.get_iter_at_mark(out iter, end_mark);
+        
         if (node is PivotHeading) {
             var heading = (PivotHeading)node;
 
@@ -619,6 +1034,9 @@ private void render_pivot_to_buffer(PivotDocument doc) {
 
             // Insérer le texte
             buffer.insert(ref iter, heading.text + "\n\n", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
 
             // Obtenir de nouveaux itérateurs valides à partir des marques
             TextIter start, end;
@@ -653,25 +1071,36 @@ private void render_pivot_to_buffer(PivotDocument doc) {
 
             // Ajouter deux sauts de ligne après le paragraphe
             buffer.insert(ref iter, "\n\n", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
 
             // Supprimer la marque du paragraphe
             buffer.delete_mark(para_start);
         }
-    else if (node is PivotList) {
+        else if (node is PivotList) {
             var list = (PivotList)node;
             // Début de plage de liste
             TextMark list_start = buffer.create_mark(null, iter, true);
             render_list_to_buffer(list, ref iter, 0);
             buffer.insert(ref iter, "\n", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
+            
             TextIter list_begin_iter;
             buffer.get_iter_at_mark(out list_begin_iter, list_start);
             buffer.apply_tag(tag_list, list_begin_iter, iter);
             buffer.delete_mark(list_start);
         }
-    else if (node is PivotLink) {
+        else if (node is PivotLink) {
             var pl = (PivotLink) node;
             TextMark lmk = buffer.create_mark(null, iter, true);
             buffer.insert(ref iter, pl.text ?? pl.href ?? "", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
+            
             TextIter s;
             buffer.get_iter_at_mark(out s, lmk);
             buffer.apply_tag(tag_link, s, iter);
@@ -684,12 +1113,19 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             if (!link_tag_names.contains(unique)) link_tag_names.add(unique);
             buffer.delete_mark(lmk);
             buffer.insert(ref iter, "\n\n", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
         }
         else if (node is PivotImage) {
             var pi = (PivotImage) node;
             string placeholder = (pi.alt != null && pi.alt != "") ? pi.alt : (pi.src != null ? GLib.Path.get_basename(pi.src) : "Image");
             TextMark im = buffer.create_mark(null, iter, true);
             buffer.insert(ref iter, placeholder, -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
+            
             TextIter s;
             buffer.get_iter_at_mark(out s, im);
             buffer.apply_tag(tag_image, s, iter);
@@ -705,6 +1141,9 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             string altn = "image-alt::u:" + enca; if (!image_alt_tag_names.contains(altn)) image_alt_tag_names.add(altn);
             buffer.delete_mark(im);
             buffer.insert(ref iter, "\n\n", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
         }
         else if (node is PivotCodeBlock) {
             var code = (PivotCodeBlock)node;
@@ -730,6 +1169,9 @@ private void render_pivot_to_buffer(PivotDocument doc) {
                 buffer.insert(ref iter, "\n", -1);
             }
             buffer.insert(ref iter, "\n", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
 
             // Récupérer un itérateur valide pour le début
             TextIter start;
@@ -760,6 +1202,9 @@ private void render_pivot_to_buffer(PivotDocument doc) {
                 buffer.insert(ref iter, "\n", -1);
             }
             buffer.insert(ref iter, "\n", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
 
             // Récupérer un itérateur valide pour le début
             TextIter start;
@@ -773,45 +1218,60 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         }
         else if (node is PivotTable) {
             var table = (PivotTable)node;
-            TextIter current_iter;
-            buffer.get_iter_at_offset(out current_iter, buffer.get_char_count());
 
-            buffer.insert(ref current_iter, "\n--- TABLEAU ---\n", -1);
-            // Déterminer le nombre de colonnes (à partir de la première ligne si elle existe)
-            int num_cols = 0;
-            if (table.rows.size > 0 && table.rows[0] != null) {
-                num_cols = table.rows[0].size;
+            if (table.rows.size == 0) {
+                buffer.insert(ref iter, "\n[Tableau vide]\n\n", -1);
+                // Mettre à jour la marque de fin
+                buffer.move_mark(end_mark, iter);
+                continue;
             }
 
-            // En-têtes (simplifié)
-            string header_row = "|";
-            string separator_row = "|";
-            for (int j = 0; j < num_cols; j++) {
-                header_row += " Col %d |".printf(j + 1);
-                separator_row += " ----- |";
+            // Insérer un saut de ligne avant le tableau
+            if (!iter.starts_line()) {
+                buffer.insert(ref iter, "\n", -1);
             }
-            buffer.insert(ref current_iter, header_row + "\n", -1);
-            buffer.insert(ref current_iter, separator_row + "\n", -1);
-
-            // Données
-            foreach (var row in table.rows) {
-                string data_row = "|";
-                if (row != null) {
-                    for (int j = 0; j < num_cols; j++) {
-                        // Accéder à la cellule en vérifiant les limites
-                        string? cell_text = (j < row.size && row[j] != null) ? row[j] : "";
-                        string padded_cell = (cell_text ?? "");
-                        if (padded_cell.length < 5) {
-                            padded_cell = padded_cell + string.nfill(5 - padded_cell.length, ' ');
-                        }
-                        data_row += " %s |".printf(padded_cell);
-                    }
-                }
-                buffer.insert(ref current_iter, data_row + "\n", -1);
+            buffer.insert(ref iter, "\n", -1);
+            
+            // Utiliser la nouvelle méthode de rendu dynamique
+            insert_dynamic_table_widget(table, ref iter);
+            
+            buffer.insert(ref iter, "\n", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
+        }
+        else if (node is PivotRule) {
+            // Créer un trait de séparation qui s'étend sur toute la largeur
+            TextMark rule_start = buffer.create_mark(null, iter, true);
+            
+            // Utiliser la fonction utilitaire pour calculer la largeur optimale
+            int rule_length = calculate_rule_length();
+            
+            // Créer un trait continu et élégant avec des caractères Unicode
+            StringBuilder rule_builder = new StringBuilder();
+            for (int i = 0; i < rule_length; i++) {
+                rule_builder.append_unichar('─');
             }
-            buffer.insert(ref current_iter, "--- FIN TABLEAU ---\n\n", -1);
+            string rule_line = rule_builder.str;
+            
+            buffer.insert(ref iter, rule_line + "\n\n", -1);
+            
+            // Mettre à jour la marque de fin
+            buffer.move_mark(end_mark, iter);
+            
+            // Appliquer le tag de règle
+            TextIter start;
+            buffer.get_iter_at_mark(out start, rule_start);
+            TextIter end = start;
+            end.forward_chars(rule_line.length);
+            buffer.apply_tag(tag_rule, start, end);
+            
+            buffer.delete_mark(rule_start);
         }
     }
+    
+    // Supprimer la marque de fin
+    buffer.delete_mark(end_mark);
 
     // Rien à nettoyer: les marqueurs Markdown sont supprimés en amont, et <u>…</u> est géré à l’insertion
 }
@@ -1083,7 +1543,64 @@ public PivotDocument get_pivot_document() {
             }
             // Construire des segments enrichis pour l'item à partir du buffer courant
             var item = new PivotListItem();
-            item.segments = extract_inline_segments_from_text(item_text, line_start, line_end);
+            
+            // Solution 2 : Détection précoce des couleurs et formatage
+            TextIter search_start = line_start;
+            TextIter search_end = line_end;
+            
+            // Scanner toute la ligne pour détecter la présence de formatage ou couleurs
+            bool found_formatting = false;
+            TextIter scan_pos = search_start;
+            
+            while (!scan_pos.equal(search_end)) {
+                // Vérifier le formatage basique
+                if (scan_pos.has_tag(tag_bold) || scan_pos.has_tag(tag_italic) || 
+                    scan_pos.has_tag(tag_strikethrough) || scan_pos.has_tag(tag_code) || 
+                    scan_pos.has_tag(tag_underline)) {
+                    found_formatting = true;
+                    break;
+                }
+                
+                // Vérifier couleurs de texte
+                foreach (var name in fg_tag_names) {
+                    var t_fg = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+                    if (t_fg != null && scan_pos.has_tag(t_fg)) {
+                        found_formatting = true;
+                        break;
+                    }
+                }
+                if (found_formatting) break;
+                
+                // Vérifier couleurs de fond
+                foreach (var name in bg_tag_names) {
+                    var t_bg = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+                    if (t_bg != null && scan_pos.has_tag(t_bg)) {
+                        found_formatting = true;
+                        break;
+                    }
+                }
+                if (found_formatting) break;
+                
+                if (!scan_pos.forward_char()) break;
+            }
+            
+            if (found_formatting) {
+                // Il y a du formatage, utiliser extract_formatted_segments avec le texte complet de la ligne
+                string full_line_text = buffer.get_text(search_start, search_end, false);
+                var formatted_segments = extract_formatted_segments(full_line_text, search_start, search_end);
+                
+                // Nettoyer les segments pour enlever les préfixes de liste
+                clean_list_prefix_from_segments(formatted_segments, is_bullet, is_ordered);
+                
+                item.segments = formatted_segments;
+            } else {
+                // Pas de formatage, utiliser la logique simple
+                var seg = new TextSegment(item_text);
+                var segments = new Gee.ArrayList<TextSegment>();
+                segments.add(seg);
+                item.segments = segments;
+            }
+            
             stacks.get(stacks.size - 1).items.add(item);
         }
         if (root.items.size > 0) doc.children.add(root);
@@ -1130,6 +1647,8 @@ public PivotDocument get_pivot_document() {
                 if (numeric) llist = true;
             }
         }
+        // Détection des règles horizontales (lignes avec le tag rule)
+        bool lrule = line_start.has_tag(tag_rule);
 
         // Délimiteurs de blocs: ligne vide sépare tout
         if (is_blank) {
@@ -1156,6 +1675,20 @@ public PivotDocument get_pivot_document() {
             heading.text = line_text.strip();
             heading.level = lh1 ? 1 : (lh2 ? 2 : 3);
             doc.children.add(heading);
+            if (!iter.forward_line()) break;
+            continue;
+        }
+
+        // Rule horizontale: ligne autonome
+        if (lrule) {
+            // Flush blocs précédents
+            if (in_code) flush_code_block();
+            if (in_quote) flush_quote_block();
+            if (in_list) flush_list_block();
+            if (in_paragraph) flush_paragraph_block(block_start, line_end);
+            in_code = in_quote = in_list = in_paragraph = false;
+
+            doc.children.add(new PivotRule());
             if (!iter.forward_line()) break;
             continue;
         }
@@ -1363,9 +1896,27 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
 
         TextIter segment_end = current;
         // Inclure underline dans la détection pour découper correctement
-    bool has_tag = segment_end.has_tag(tag_bold) || segment_end.has_tag(tag_italic) ||
+        bool has_tag = segment_end.has_tag(tag_bold) || segment_end.has_tag(tag_italic) ||
                        segment_end.has_tag(tag_strikethrough) || segment_end.has_tag(tag_code) ||
-               segment_end.has_tag(tag_underline) || segment_end.has_tag(tag_link);
+                       segment_end.has_tag(tag_underline) || segment_end.has_tag(tag_link);
+        
+        // Détecter les couleurs actuelles
+        string? current_fg_color = null;
+        string? current_bg_color = null;
+        foreach (var name in fg_tag_names) {
+            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+            if (t != null && segment_end.has_tag(t)) {
+                current_fg_color = name.substring("fg::".length);
+                break;
+            }
+        }
+        foreach (var name in bg_tag_names) {
+            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+            if (t != null && segment_end.has_tag(t)) {
+                current_bg_color = name.substring("bg::".length);
+                break;
+            }
+        }
 
         // Avancer caractère par caractère jusqu'à un changement de format ou la fin du paragraphe
         int safety_counter = 0;
@@ -1378,8 +1929,28 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
                                    segment_end.has_tag(tag_strikethrough) || segment_end.has_tag(tag_code) ||
                                    segment_end.has_tag(tag_underline) || segment_end.has_tag(tag_link);
 
-            // Si le formatage change, arrêter
-            if (has_tag != current_has_tag) {
+            // Détecter les nouvelles couleurs
+            string? new_fg_color = null;
+            string? new_bg_color = null;
+            foreach (var name in fg_tag_names) {
+                var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+                if (t != null && segment_end.has_tag(t)) {
+                    new_fg_color = name.substring("fg::".length);
+                    break;
+                }
+            }
+            foreach (var name in bg_tag_names) {
+                var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+                if (t != null && segment_end.has_tag(t)) {
+                    new_bg_color = name.substring("bg::".length);
+                    break;
+                }
+            }
+
+            // Si le formatage OU les couleurs changent, arrêter
+            if (has_tag != current_has_tag || 
+                current_fg_color != new_fg_color || 
+                current_bg_color != new_bg_color) {
                 break;
             }
 
@@ -1438,6 +2009,23 @@ private Gee.List<TextSegment> extract_formatted_segments(string text, TextIter p
             }
             seg.link_href = found;
         }
+        
+        // Extraire les couleurs des tags dynamiques
+        foreach (var name in fg_tag_names) {
+            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+            if (t != null && current.has_tag(t)) {
+                seg.fg_color = name.substring("fg::".length);
+                break;
+            }
+        }
+        foreach (var name in bg_tag_names) {
+            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
+            if (t != null && current.has_tag(t)) {
+                seg.bg_color = name.substring("bg::".length);
+                break;
+            }
+        }
+        
         segments.add(seg);
 
         // Passer au segment suivant
@@ -1462,6 +2050,46 @@ private bool range_has_tag(Gtk.TextIter start, Gtk.TextIter end, Gtk.TextTag tag
         if (!it.forward_char()) break;
     }
     return false;
+}
+
+// Helper pour nettoyer les préfixes de liste des segments
+private void clean_list_prefix_from_segments(Gee.List<TextSegment> segments, bool is_bullet, bool is_ordered) {
+    if (segments.size == 0) return;
+    
+    var first_segment = segments.get(0);
+    string text = first_segment.text;
+    
+    if (is_bullet) {
+        // Enlever "• " ou "- " au début
+        if (text.has_prefix("• ")) {
+            first_segment.text = text.substring("• ".length);
+        } else if (text.has_prefix("- ")) {
+            first_segment.text = text.substring(2);
+        } else if (text.has_prefix("* ")) {
+            first_segment.text = text.substring(2);
+        } else if (text.has_prefix("+ ")) {
+            first_segment.text = text.substring(2);
+        }
+    } else if (is_ordered) {
+        // Enlever "N. " au début
+        int dot_pos = text.index_of(". ");
+        if (dot_pos > 0) {
+            // Vérifier que c'est bien numérique avant le point
+            bool is_numeric = true;
+            for (int i = 0; i < dot_pos; i++) {
+                if (!(text[i] >= '0' && text[i] <= '9')) {
+                    is_numeric = false;
+                    break;
+                }
+            }
+            if (is_numeric) {
+                first_segment.text = text.substring(dot_pos + 2);
+            }
+        }
+    }
+    
+    // Enlever les espaces d'indentation au début si présent
+    first_segment.text = first_segment.text.strip();
 }
 
 /**
@@ -1621,5 +2249,218 @@ public void get_cursor_position(out int line, out int column) {
     line = iter.get_line();
     column = iter.get_line_offset();
 }
+
+// === MÉTHODES POUR RÉCUPÉRER LES VALEURS COURANTES ===
+
+/** Récupère la famille de police courante au curseur */
+public string? get_current_font_family() {
+    var buffer = this.get_buffer();
+    TextIter iter;
+    buffer.get_iter_at_mark(out iter, buffer.get_insert());
+    
+    // Parcourir les tags actifs au curseur
+    foreach (var tag in iter.get_tags()) {
+        // Vérifier d'abord la propriété family
+        Value family_value = Value(typeof(string));
+        tag.get_property("family", ref family_value);
+        if (family_value.holds(typeof(string))) {
+            string family = family_value.get_string();
+            if (family != null && family != "") {
+                return family;
+            }
+        }
+        
+        // Fallback : extraire de font-desc si disponible
+        Value font_desc_value = Value(typeof(string));
+        tag.get_property("font-desc", ref font_desc_value);
+        if (font_desc_value.holds(typeof(string))) {
+            string font_desc = font_desc_value.get_string();
+            if (font_desc != null && font_desc != "") {
+                // Extraire juste la famille du font-desc
+                var parts = font_desc.split(" ");
+                if (parts.length > 0) {
+                    return parts[0];
+                }
+            }
+        }
+    }
+    return null;
 }
+
+/** Récupère la taille de police courante au curseur */
+public int get_current_font_size() {
+    var buffer = this.get_buffer();
+    TextIter iter;
+    buffer.get_iter_at_mark(out iter, buffer.get_insert());
+    
+    // Parcourir les tags actifs au curseur
+    foreach (var tag in iter.get_tags()) {
+        Value size_value = Value(typeof(int));
+        tag.get_property("size-points", ref size_value);
+        if (size_value.holds(typeof(int))) {
+            return size_value.get_int();
+        }
+    }
+    return 11; // Taille par défaut
 }
+
+/** Récupère la couleur de texte courante au curseur */
+public Gdk.RGBA? get_current_foreground_color() {
+    var buffer = this.get_buffer();
+    TextIter iter;
+    buffer.get_iter_at_mark(out iter, buffer.get_insert());
+    
+    // Parcourir les tags actifs au curseur
+    foreach (var tag in iter.get_tags()) {
+        Value color_value = Value(typeof(Gdk.RGBA));
+        tag.get_property("foreground-rgba", ref color_value);
+        if (color_value.holds(typeof(Gdk.RGBA))) {
+            Gdk.RGBA* rgba_ptr = (Gdk.RGBA*)color_value.get_boxed();
+            if (rgba_ptr != null) {
+                return *rgba_ptr;
+            }
+        }
+    }
+    return null; // Couleur par défaut
+}
+
+/** Récupère la couleur de fond courante au curseur */
+public Gdk.RGBA? get_current_background_color() {
+    var buffer = this.get_buffer();
+    TextIter iter;
+    buffer.get_iter_at_mark(out iter, buffer.get_insert());
+    
+    // Parcourir les tags actifs au curseur
+    foreach (var tag in iter.get_tags()) {
+        Value color_value = Value(typeof(Gdk.RGBA));
+        tag.get_property("background-rgba", ref color_value);
+        if (color_value.holds(typeof(Gdk.RGBA))) {
+            Gdk.RGBA* rgba_ptr = (Gdk.RGBA*)color_value.get_boxed();
+            if (rgba_ptr != null) {
+                return *rgba_ptr;
+            }
+        }
+    }
+    return null; // Couleur par défaut
+}
+
+/** Applique la police et la taille en une seule fois */
+public void apply_font_and_size(string? font_family, int size) {
+    // Protection: vérifier que le widget est réalisé et stable
+    if (!this.get_realized() || this.get_buffer() == null) {
+        warning("Widget non réalisé, application différée");
+        Idle.add(() => {
+            if (this.get_realized() && this.get_buffer() != null) {
+                apply_font_and_size(font_family, size);
+            }
+            return false;
+        });
+        return;
+    }
+    
+    try {
+        TextIter start, end;
+        if (buffer.get_selection_bounds(out start, out end)) {
+            // Vérification des itérateurs de sélection
+            if (start.compare(end) >= 0) {
+                warning("Sélection invalide détectée");
+                return;
+            }
+            
+            // Mode ultra-sécurisé: toujours différer même pour les sélections
+            Idle.add(() => {
+                try {
+                    TextIter start_deferred, end_deferred;
+                    if (buffer.get_selection_bounds(out start_deferred, out end_deferred)) {
+                        // Appliquer à la sélection avec protection renforcée
+                        if (font_family != null && font_family.strip() != "") {
+                            try {
+                                var font_tag = buffer.create_tag(null, "family", font_family);
+                                if (font_tag != null) {
+                                    buffer.apply_tag(font_tag, start_deferred, end_deferred);
+                                }
+                            } catch (Error font_error) {
+                                warning("Impossible d'appliquer la police: %s", font_error.message);
+                            }
+                        }
+                        if (size > 0) {
+                            try {
+                                var size_tag = buffer.create_tag(null, "size-points", size);
+                                if (size_tag != null) {
+                                    buffer.apply_tag(size_tag, start_deferred, end_deferred);
+                                }
+                            } catch (Error size_error) {
+                                warning("Impossible d'appliquer la taille: %s", size_error.message);
+                            }
+                        }
+                    } else {
+                        // Plus de sélection, basculer sur les attributs en attente
+                        current_font_family = font_family;
+                        current_font_size = size;
+                        has_pending_attributes = true;
+                    }
+                } catch (Error deferred_error) {
+                    warning("Erreur lors de l'application différée: %s", deferred_error.message);
+                    // Fallback sur attributs en attente
+                    current_font_family = font_family;
+                    current_font_size = size;
+                    has_pending_attributes = true;
+                }
+                return false;
+            });
+        } else {
+            // Si pas de sélection, on applique à l'emplacement du curseur
+            // en créant un tag temporaire qui sera utilisé pour le prochain texte saisi
+            current_font_family = font_family;
+            current_font_size = size;
+            
+            // Marquer que nous avons des attributs en attente
+            has_pending_attributes = true;
+        }
+    } catch (Error e) {
+        warning("Erreur lors de l'application de la police: %s", e.message);
+        // En cas d'erreur, on bascule sur le mode attributs en attente
+        current_font_family = font_family;
+        current_font_size = size;
+        has_pending_attributes = true;
+    }
+}
+
+/** Applique la couleur de texte */
+public void apply_foreground_color(Gdk.RGBA color) {
+    TextIter start, end;
+    if (buffer.get_selection_bounds(out start, out end)) {
+        var tag = buffer.create_tag(null, "foreground-rgba", color);
+        buffer.apply_tag(tag, start, end);
+    } else {
+        // Marquer la couleur courante pour les futures insertions
+        var tag_table = buffer.get_tag_table();
+        var color_tag = tag_table.lookup("current-foreground");
+        if (color_tag == null) {
+            color_tag = buffer.create_tag("current-foreground", "foreground-rgba", color);
+        } else {
+            color_tag.set_property("foreground-rgba", color);
+        }
+    }
+}
+
+/** Applique la couleur de fond */
+public void apply_background_color(Gdk.RGBA color) {
+    TextIter start, end;
+    if (buffer.get_selection_bounds(out start, out end)) {
+        var tag = buffer.create_tag(null, "background-rgba", color);
+        buffer.apply_tag(tag, start, end);
+    } else {
+        // Marquer la couleur de fond courante pour les futures insertions
+        var tag_table = buffer.get_tag_table();
+        var bg_tag = tag_table.lookup("current-background");
+        if (bg_tag == null) {
+            bg_tag = buffer.create_tag("current-background", "background-rgba", color);
+        } else {
+            bg_tag.set_property("background-rgba", color);
+        }
+    }
+}
+
+} // Fermeture de la classe WysiwygEditor
+} // Fermeture du namespace IntaText

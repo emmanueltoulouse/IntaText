@@ -13,8 +13,6 @@ public PivotDocument? current_document;
 private WysiwygEditor? wysiwyg_editor;
 private bool _has_unsaved_changes = false;
 private string _current_file_path = "";
-private Gtk.Button? text_color_button;
-private Gtk.Button? bg_color_button;
 
 private DocumentSource _source = DocumentSource.UNKNOWN;
 
@@ -184,128 +182,112 @@ private void initialize_ui() {
         "🖼",
         _("Insérer une image")
     );
-    var btn_rule = make_plain_btn_from_candidates(
-        { "horizontal-rule-symbolic", "view-list-symbolic", "list-remove-symbolic" },
-        "─",
-        _("Insérer un trait de séparation")
-    );
-    var btn_table = make_plain_btn_from_candidates(
-        { "view-grid-symbolic", "table-symbolic", "grid-symbolic" },
-        "⊞",
-        _("Insérer un tableau")
-    );
     insert_group.append(btn_code);
     insert_group.append(btn_link);
     insert_group.append(btn_image);
-    insert_group.append(btn_rule);
-    insert_group.append(btn_table);
     format_bar.append(insert_group);
-    
-    // Boutons de couleurs
-    text_color_button = new Gtk.Button();
-    text_color_button.set_tooltip_text(_("Couleur du texte"));
-    var text_color_display = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 4);
-    text_color_display.append(new Gtk.Label("A"));
-    text_color_display.add_css_class("text-color-display");
-    text_color_button.set_child(text_color_display);
-    format_bar.append(text_color_button);
-    
-    bg_color_button = new Gtk.Button();
-    bg_color_button.set_tooltip_text(_("Couleur de fond"));
-    var bg_color_display = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 4);
-    bg_color_display.append(new Gtk.Label("■"));
-    bg_color_display.add_css_class("bg-color-display");
-    bg_color_button.set_child(bg_color_display);
-    format_bar.append(bg_color_button);
 
-    // Handlers pour les boutons de formatage
-    
-    // Handlers pour les boutons de couleur
-    text_color_button.clicked.connect(() => {
-        if (wysiwyg_editor == null) return;
-        
-        var color_dialog = new Gtk.ColorChooserDialog(_("Choisir une couleur de texte"), null);
-        color_dialog.set_modal(true);
-        color_dialog.set_transient_for((Gtk.Window) this.get_root());
-        
-        // Récupérer la couleur actuelle
-        var current_color = wysiwyg_editor.get_current_foreground_color();
-        if (current_color != null) {
-            color_dialog.set_rgba(current_color);
-        }
-        
-        // Timeout pour la prévisualisation
-        uint timeout_id = 0;
-        color_dialog.notify["rgba"].connect(() => {
-            if (timeout_id > 0) {
-                Source.remove(timeout_id);
-            }
-            timeout_id = Timeout.add(50, () => {
-                wysiwyg_editor.apply_foreground_color(color_dialog.get_rgba());
-                update_text_color_display();
-                timeout_id = 0;
-                return false;
-            });
-        });
-        
-        color_dialog.response.connect((response_id) => {
-            if (timeout_id > 0) {
-                Source.remove(timeout_id);
-                timeout_id = 0;
-            }
-            
-            if (response_id == Gtk.ResponseType.OK) {
-                wysiwyg_editor.apply_foreground_color(color_dialog.get_rgba());
-                update_text_color_display();
-            }
-            color_dialog.destroy();
-        });
-        
-        color_dialog.show();
+    // Sélecteur de style (police, taille, couleurs)
+    var style_btn = make_plain_btn_from_candidates(
+        { "preferences-desktop-font", "font-select-symbolic", "format-text-color-symbolic" },
+        "A",
+        _("Police, taille et couleurs de la sélection")
+    );
+    format_bar.append(style_btn);
+    // Popover de style
+    var style_pop = new Gtk.Popover();
+    style_pop.set_has_arrow(true);
+    style_pop.set_parent(style_btn);
+    var style_box = new Gtk.Box(Orientation.VERTICAL, 8);
+    style_box.set_margin_top(8);
+    style_box.set_margin_bottom(8);
+    style_box.set_margin_start(8);
+    style_box.set_margin_end(8);
+    // Police
+    var font_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    font_row.append(new Gtk.Label(_("Police")));
+    var font_button = new Gtk.FontButton();
+    font_button.set_use_font(true);
+    font_row.append(font_button);
+    // Taille
+    var size_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    size_row.append(new Gtk.Label(_("Taille")));
+    var size_adjustment = new Gtk.Adjustment(12, 6, 96, 1, 4, 0);
+    var size_spin = new Gtk.SpinButton(size_adjustment, 1, 0);
+    size_row.append(size_spin);
+    // Couleur texte
+    var fg_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    fg_row.append(new Gtk.Label(_("Texte")));
+    var fg_button = new Gtk.ColorButton();
+    fg_row.append(fg_button);
+    // Couleur fond
+    var bg_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    bg_row.append(new Gtk.Label(_("Fond")));
+    var bg_button = new Gtk.ColorButton();
+    bg_row.append(bg_button);
+    // Actions
+    var act_row = new Gtk.Box(Orientation.HORIZONTAL, 6);
+    var apply_btn = new Gtk.Button.with_label(_("Appliquer"));
+    var clear_btn = new Gtk.Button.with_label(_("Effacer"));
+    act_row.append(clear_btn);
+    act_row.append(apply_btn);
+    // Assembler
+    style_box.append(font_row);
+    style_box.append(size_row);
+    style_box.append(fg_row);
+    style_box.append(bg_row);
+    style_box.append(act_row);
+    style_pop.set_child(style_box);
+
+    style_btn.clicked.connect(() => {
+        style_pop.popup();
     });
-    
-    bg_color_button.clicked.connect(() => {
+
+    clear_btn.clicked.connect(() => {
         if (wysiwyg_editor == null) return;
-        
-        var color_dialog = new Gtk.ColorChooserDialog(_("Choisir une couleur de fond"), null);
-        color_dialog.set_modal(true);
-        color_dialog.set_transient_for((Gtk.Window) this.get_root());
-        
-        // Récupérer la couleur actuelle
-        var current_color = wysiwyg_editor.get_current_background_color();
-        if (current_color != null) {
-            color_dialog.set_rgba(current_color);
+        // Pour "effacer", on applique des tags neutres: police par défaut, couleurs héritées.
+        // Gtk.TextTag ne supporte pas "unset" direct; on peut supprimer des tags connus.
+        // Stratégie: appliquer des tags explicitement: foreground "@theme_fg_color" ne marche pas ici,
+        // on se contente de supprimer les tags sur la sélection.
+        var buf = wysiwyg_editor.get_buffer();
+        Gtk.TextIter s, e;
+        if (buf.get_selection_bounds(out s, out e)) {
+            // Supprime les tags de foreground/background/font/size sur l’intervalle
+            buf.remove_tag_by_name("foreground", s, e);
+            buf.remove_tag_by_name("background", s, e);
+            buf.remove_tag_by_name("font", s, e);
+            buf.remove_tag_by_name("font-desc", s, e);
+            buf.remove_tag_by_name("size", s, e);
+            buf.remove_tag_by_name("size-points", s, e);
         }
-        
-        // Timeout pour la prévisualisation  
-        uint timeout_id = 0;
-        color_dialog.notify["rgba"].connect(() => {
-            if (timeout_id > 0) {
-                Source.remove(timeout_id);
-            }
-            timeout_id = Timeout.add(50, () => {
-                wysiwyg_editor.apply_background_color(color_dialog.get_rgba());
-                update_bg_color_display();
-                timeout_id = 0;
-                return false;
-            });
-        });
-        
-        color_dialog.response.connect((response_id) => {
-            if (timeout_id > 0) {
-                Source.remove(timeout_id);
-                timeout_id = 0;
-            }
-            
-            if (response_id == Gtk.ResponseType.OK) {
-                wysiwyg_editor.apply_background_color(color_dialog.get_rgba());
-                update_bg_color_display();
-            }
-            color_dialog.destroy();
-        });
-        
-        color_dialog.show();
+        style_pop.popdown();
     });
+
+    apply_btn.clicked.connect(() => {
+        if (wysiwyg_editor == null) return;
+        // Police (nom de famille uniquement si possible)
+        string font = font_button.get_font();
+        string family = font;
+        if (font != null && font.index_of(" ") > 0) {
+            var parts = font.split(" ");
+            if (parts.length > 0) family = parts[0];
+        }
+        // Taille
+        int size = (int) size_spin.get_value();
+        // Couleurs
+        Gdk.RGBA fg = Gdk.RGBA();
+        fg = fg_button.get_rgba();
+        Gdk.RGBA bg = Gdk.RGBA();
+        bg = bg_button.get_rgba();
+
+        // Appliquer aux sélections présentes
+        wysiwyg_editor.apply_font_to_selection(family);
+        wysiwyg_editor.apply_font_size_to_selection(size);
+        wysiwyg_editor.apply_color_to_selection(fg.to_string());
+        wysiwyg_editor.apply_background_to_selection(bg.to_string());
+        style_pop.popdown();
+    });
+
     this.append(format_bar);
 
     // Zone d'édition scrollable minimale
@@ -411,17 +393,6 @@ private void initialize_ui() {
         });
         pop.popup();
     });
-    btn_rule.clicked.connect(() => {
-        if (wysiwyg_editor != null) {
-            wysiwyg_editor.insert_horizontal_rule();
-        }
-    });
-    
-    btn_table.clicked.connect(() => {
-        if (wysiwyg_editor != null) {
-            show_table_creation_dialog();
-        }
-    });
     void set_heading_buttons(int level) {
         btn_p.active = (level == 0);
         btn_h1.active = (level == 1);
@@ -452,18 +423,8 @@ private void initialize_ui() {
         int h = wysiwyg_editor.get_active_heading_level();
         set_heading_buttons(h);
     }
-    buf.notify["cursor-position"].connect(() => { 
-        emit_cursor_position(); 
-        sync_toggle_states(); 
-        update_text_color_display();
-        update_bg_color_display();
-    });
-    buf.mark_set.connect((iter, mark) => { 
-        emit_cursor_position(); 
-        sync_toggle_states(); 
-        update_text_color_display();
-        update_bg_color_display();
-    });
+    buf.notify["cursor-position"].connect(() => { emit_cursor_position(); sync_toggle_states(); });
+    buf.mark_set.connect((iter, mark) => { emit_cursor_position(); sync_toggle_states(); });
     scroll.set_child(wysiwyg_editor);
     this.append(scroll);
     // Position initiale
@@ -701,147 +662,5 @@ private string sanitize_font_family(string input) {
     }
     return input;
 }
-
-private void update_text_color_display() {
-    if (wysiwyg_editor == null || text_color_button == null) return;
-    
-    var color = wysiwyg_editor.get_current_foreground_color();
-    if (color != null) {
-        // Appliquer la couleur au label A via CSS
-        var css = @".text-color-display { color: $(color.to_string()); }";
-        var provider = new Gtk.CssProvider();
-        try {
-            provider.load_from_string(css);
-            text_color_button.get_style_context().add_provider(
-                provider,
-                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            );
-        } catch (Error e) {
-            warning("Erreur CSS couleur texte: %s", e.message);
-        }
-    } else {
-        // Remettre la couleur par défaut
-        text_color_button.get_style_context().remove_class("text-color-display");
-    }
 }
-
-private void update_bg_color_display() {
-    if (wysiwyg_editor == null || bg_color_button == null) return;
-    
-    var color = wysiwyg_editor.get_current_background_color();
-    if (color != null) {
-        // Appliquer la couleur au symbole ■ via CSS
-        var css = @".bg-color-display { color: $(color.to_string()); }";
-        var provider = new Gtk.CssProvider();
-        try {
-            provider.load_from_string(css);
-            bg_color_button.get_style_context().add_provider(
-                provider,
-                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            );
-        } catch (Error e) {
-            warning("Erreur CSS couleur fond: %s", e.message);
-        }
-    } else {
-        // Remettre la couleur par défaut
-        bg_color_button.get_style_context().remove_class("bg-color-display");
-    }
 }
-
-private void show_table_creation_dialog() {
-    var dialog = new Gtk.Dialog() {
-        title = _("Créer un tableau"),
-        modal = true,
-        transient_for = (Gtk.Window) this.get_root(),
-        default_width = 400,
-        default_height = 300
-    };
-    
-    dialog.add_button(_("Annuler"), Gtk.ResponseType.CANCEL);
-    dialog.add_button(_("Créer"), Gtk.ResponseType.ACCEPT);
-    
-    // S'assurer que le bouton "Créer" soit le bouton par défaut
-    dialog.set_default_response(Gtk.ResponseType.ACCEPT);
-    
-    // Contenu du dialogue
-    var content_area = dialog.get_content_area();
-    content_area.set_spacing(12);
-    
-    var grid = new Gtk.Grid() {
-        margin_top = 20,
-        margin_bottom = 20,
-        margin_start = 20,
-        margin_end = 20,
-        row_spacing = 12,
-        column_spacing = 12,
-        halign = Gtk.Align.FILL,
-        valign = Gtk.Align.START
-    };
-    
-    var label_rows = new Gtk.Label(_("Nombre de lignes:")) {
-        halign = Gtk.Align.START
-    };
-    var spin_rows = new Gtk.SpinButton.with_range(1, 20, 1) {
-        value = 3
-    };
-    
-    var label_cols = new Gtk.Label(_("Nombre de colonnes:")) {
-        halign = Gtk.Align.START
-    };
-    var spin_cols = new Gtk.SpinButton.with_range(1, 10, 1) {
-        value = 3
-    };
-    
-    var label_headers = new Gtk.Label(_("Première ligne en-tête:")) {
-        halign = Gtk.Align.START
-    };
-    var check_headers = new Gtk.CheckButton() {
-        active = true
-    };
-    
-    grid.attach(label_rows, 0, 0, 1, 1);
-    grid.attach(spin_rows, 1, 0, 1, 1);
-    grid.attach(label_cols, 0, 1, 1, 1);
-    grid.attach(spin_cols, 1, 1, 1, 1);
-    grid.attach(label_headers, 0, 2, 1, 1);
-    grid.attach(check_headers, 1, 2, 1, 1);
-    
-    // Ajouter le grid à la zone de contenu du dialogue
-    content_area.append(grid);
-    
-    dialog.response.connect((response_id) => {
-        if (response_id == Gtk.ResponseType.ACCEPT) {
-            int rows = (int) spin_rows.value;
-            int cols = (int) spin_cols.value;
-            bool has_headers = check_headers.active;
-            
-            create_and_insert_table(rows, cols, has_headers);
-        }
-        dialog.close();
-    });
-    
-    dialog.present();
-}
-
-private void create_and_insert_table(int rows, int cols, bool has_headers) {
-    if (wysiwyg_editor == null) return;
-    
-    var table = new PivotTable();
-    
-    for (int i = 0; i < rows; i++) {
-        var row = new Gee.ArrayList<string>();
-        for (int j = 0; j < cols; j++) {
-            if (i == 0 && has_headers) {
-                row.add("En-tête " + (j + 1).to_string());
-            } else {
-                row.add("Cellule " + (i + 1).to_string() + "," + (j + 1).to_string());
-            }
-        }
-        table.rows.add(row);
-    }
-    
-    wysiwyg_editor.insert_table_object(table);
-}
-
-} // Fermeture de la classe EditorView
-} // Fermeture du namespace IntaText

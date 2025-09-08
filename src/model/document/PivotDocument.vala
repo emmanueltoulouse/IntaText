@@ -57,6 +57,8 @@ public static PivotNode from_json(Json.Object node) throws Error {
         return PivotLink.from_json(node);
     case "Table":
         return PivotTable.from_json(node);
+    case "Rule":
+        return PivotRule.from_json(node);
     // Ajoutez d'autres types ici si nécessaire
     default:
         throw new Error(Quark.from_string("PivotFormatError"), 1, "Unknown node type: %s", type);
@@ -588,8 +590,38 @@ public class PivotTable : PivotNode {
 // Une meilleure solution serait un getter/setter ou une méthode dédiée
 public Gee.List<Gee.List<string> > rows = new Gee.ArrayList<Gee.List<string> >();
 public override string to_markdown(){
-    // TODO: Implement markdown conversion for PivotTable
-    return "";
+    if (rows.size == 0) return "";
+    
+    StringBuilder builder = new StringBuilder();
+    
+    // Première ligne - En-têtes
+    if (rows.size > 0) {
+        builder.append("| ");
+        foreach (string cell in rows[0]) {
+            builder.append(cell ?? "");
+            builder.append(" | ");
+        }
+        builder.append("\n");
+        
+        // Ligne de séparation
+        builder.append("|");
+        foreach (string cell in rows[0]) {
+            builder.append("---|");
+        }
+        builder.append("\n");
+        
+        // Lignes de données
+        for (int i = 1; i < rows.size; i++) {
+            builder.append("| ");
+            foreach (string cell in rows[i]) {
+                builder.append(cell ?? "");
+                builder.append(" | ");
+            }
+            builder.append("\n");
+        }
+    }
+    
+    return builder.str;
 }
 public override string to_html(){
     // Simple HTML table conversion
@@ -783,4 +815,26 @@ public new static PivotLink from_json(Json.Object node) throws Error {
   *  }
   * }
   */
+
+// Spécifier GLib.Object
+public class PivotRule : PivotNode {
+public override string to_markdown(){
+    return "---";
+}
+
+public override string to_html(){
+    return "<hr>";
+}
+
+public override Json.Object to_json(){
+    var obj = new Json.Object();
+    obj.set_string_member("type", "Rule");
+    return obj;
+}
+
+// Ajouter 'new' pour masquer la méthode parente
+public new static PivotRule from_json(Json.Object node) throws Error {
+    return new PivotRule();
+}
+}
 }
