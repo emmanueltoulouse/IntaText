@@ -131,6 +131,9 @@ private void ensure_tags() {
     tag_list = (Gtk.TextTag) table.lookup("list");
     if (tag_list == null) tag_list = buffer.create_tag("list", "indent", 12);
 
+    // Créer les tags d'indentation pour gérer les lignes wrappées
+    create_indentation_tags();
+
     // Image (marqueur générique)
     tag_image = (Gtk.TextTag) table.lookup("image");
     if (tag_image == null) tag_image = buffer.create_tag("image");
@@ -157,12 +160,33 @@ private void ensure_tags() {
     tag_table_cell = (Gtk.TextTag) table.lookup("table_cell");
     if (tag_table_cell == null) {
         tag_table_cell = buffer.create_tag("table_cell",
-                                         "background", "white",
+                                         "background", "#ffffff",
                                          "foreground", "#000000");
     }
+}
 
+/**
+ * Crée les tags d'indentation pour gérer les lignes wrappées
+ */
+private void create_indentation_tags() {
+    var table = buffer.get_tag_table();
+    
+    // Créer jusqu'à 10 niveaux d'indentation (devrait être suffisant)
+    for (int level = 1; level <= 10; level++) {
+        string tag_name = "indent-level-%d".printf(level);
+        var existing_tag = table.lookup(tag_name);
+        
+        if (existing_tag == null) {
+            int margin = level * 20; // 20 pixels par niveau d'indentation
+            buffer.create_tag(tag_name, "left-margin", margin);
+        }
+    }
+    
+    // Ajouter les tags de table manquants
+    var table_tag_table = buffer.get_tag_table();
+    
     // Table border (bordures de tableau)
-    tag_table_border = (Gtk.TextTag) table.lookup("table_border");
+    tag_table_border = (Gtk.TextTag) table_tag_table.lookup("table_border");
     if (tag_table_border == null) {
         tag_table_border = buffer.create_tag("table_border",
                                            "foreground", "#CCCCCC",
@@ -3103,58 +3127,96 @@ private void indent_lines_with_smart_numbering(TextIter start, TextIter end, boo
     // Bloquer les signaux temporairement pour éviter les notifications multiples
     buffer.begin_user_action();
     
-    // Collecter les informations sur les listes numérotées avant modification
-    var numbered_lists = new Gee.ArrayList<NumberedListInfo?>();
-    
+    // Appliquer l'indentation ligne par ligne avec les tags
     for (int line = start_line; line <= end_line; line++) {
         Gtk.TextIter line_start;
         buffer.get_iter_at_line(out line_start, line);
         Gtk.TextIter line_end = line_start;
         line_end.forward_to_line_end();
         
-        string line_text = buffer.get_text(line_start, line_end, false);
-        var list_info = parse_numbered_list_line(line_text);
-        numbered_lists.add(list_info);
+        if (increase) {
+            apply_indentation_increase(line_start, line_end);
+        } else {
+            apply_indentation_decrease(line_start, line_end);
+        }
     }
     
-    // Appliquer l'indentation ligne par ligne
-    for (int line = start_line; line <= end_line; line++) {
-        Gtk.TextIter line_start;
-        buffer.get_iter_at_line(out line_start, line);
+    buffer.end_user_action();
+}
+
+/**
+ * Applique une augmentation d'indentation à une ligne en utilisant les tags de marge
+ */
+private void apply_indentation_increase(TextIter line_start, TextIter line_end) {
+    // Chercher le niveau d'indentation actuel
+    int current_level = get_indentation_level(line_start, line_end);
+    
+    if (current_level < 10) { // Limiter à 10 niveaux
+        // Supprimer l'ancien tag d'indentation s'il existe
+        if (current_level > 0) {
+            string old_tag_name = "indent-level-%d".printf(current_level);
+            var old_tag = buffer.get_tag_table().lookup(old_tag_name);
+            if (old_tag != null) {
+                buffer.remove_tag(old_tag, line_start, line_end);
+            }
+        }
         
-        if (increase) {
-            // Ajouter 4 espaces au début de la ligne
-            buffer.insert(ref line_start, "    ", -1);
-        } else {
-            // Supprimer jusqu'à 4 espaces ou tabulations au début de la ligne
-            Gtk.TextIter line_char = line_start;
-            int spaces_removed = 0;
-            
-            while (spaces_removed < 4 && !line_char.ends_line()) {
-                var ch = line_char.get_char();
-                if (ch == ' ') {
-                    var next = line_char;
-                    next.forward_char();
-                    buffer.delete(ref line_char, ref next);
-                    spaces_removed++;
-                } else if (ch == '\t') {
-                    var next = line_char;
-                    next.forward_char();
-                    buffer.delete(ref line_char, ref next);
-                    break; // Une tabulation remplace plusieurs espaces
-                } else {
-                    break; // Arrêter si on trouve autre chose qu'un espace ou tabulation
-                }
+        // Appliquer le nouveau tag d'indentation
+        int new_level = current_level + 1;
+        string new_tag_name = "indent-level-%d".printf(new_level);
+        var new_tag = buffer.get_tag_table().lookup(new_tag_name);
+        if (new_tag != null) {
+            buffer.apply_tag(new_tag, line_start, line_end);
+        }
+    }
+}
+
+/**
+ * Applique une diminution d'indentation à une ligne en utilisant les tags de marge
+ */
+private void apply_indentation_decrease(TextIter line_start, TextIter line_end) {
+    // Chercher le niveau d'indentation actuel
+    int current_level = get_indentation_level(line_start, line_end);
+    
+    if (current_level > 0) {
+        // Supprimer l'ancien tag d'indentation
+        string old_tag_name = "indent-level-%d".printf(current_level);
+        var old_tag = buffer.get_tag_table().lookup(old_tag_name);
+        if (old_tag != null) {
+            buffer.remove_tag(old_tag, line_start, line_end);
+        }
+        
+        // Appliquer le nouveau tag d'indentation s'il y en a un
+        int new_level = current_level - 1;
+        if (new_level > 0) {
+            string new_tag_name = "indent-level-%d".printf(new_level);
+            var new_tag = buffer.get_tag_table().lookup(new_tag_name);
+            if (new_tag != null) {
+                buffer.apply_tag(new_tag, line_start, line_end);
+            }
+        }
+    }
+}
+
+/**
+ * Détermine le niveau d'indentation actuel d'une ligne
+ */
+private int get_indentation_level(TextIter line_start, TextIter line_end) {
+    var table = buffer.get_tag_table();
+    
+    // Chercher les tags d'indentation appliqués à cette ligne
+    for (int level = 10; level >= 1; level--) {
+        string tag_name = "indent-level-%d".printf(level);
+        var tag = table.lookup(tag_name);
+        if (tag != null) {
+            var iter = line_start;
+            if (iter.has_tag(tag)) {
+                return level;
             }
         }
     }
     
-    // Renumériser les listes numérotées si nécessaire
-    if (increase) {
-        renumber_lists_after_indent(start_line, end_line, numbered_lists);
-    }
-    
-    buffer.end_user_action();
+    return 0; // Pas d'indentation
 }
 
 /** Structure pour stocker les informations d'une ligne de liste numérotée */
