@@ -288,11 +288,13 @@ public PivotDocument to_pivot(string content, string path) {
 
             // Parser la première ligne (headers)
             var header_cells = t.split("|");
-            var header_row = new Gee.ArrayList<string>();
+            var header_row = new Gee.ArrayList<PivotTableCell>();
             for (int j = 0; j < header_cells.length; j++) {
                 string cell = header_cells[j].strip();
                 if (cell != "") {
-                    header_row.add(cell);
+                    // Parser les enrichissements dans la cellule d'en-tête
+                    var segments = parse_inline_formatting(cell);
+                    header_row.add(new PivotTableCell.from_segments(segments));
                 }
             }
             if (header_row.size > 0) {
@@ -319,11 +321,13 @@ public PivotDocument to_pivot(string content, string path) {
                 }
 
                 var data_cells = row_line.split("|");
-                var data_row = new Gee.ArrayList<string>();
+                var data_row = new Gee.ArrayList<PivotTableCell>();
                 for (int j = 0; j < data_cells.length; j++) {
                     string cell = data_cells[j].strip();
                     if (cell != "") {
-                        data_row.add(cell);
+                        // Parser les enrichissements dans la cellule de données
+                        var segments = parse_inline_formatting(cell);
+                        data_row.add(new PivotTableCell.from_segments(segments));
                     }
                 }
                 if (data_row.size > 0) {
@@ -638,11 +642,11 @@ private Gee.List<TextSegment> parse_inline_recursive_with_links(string text, Gee
                     // p pointe sur '(', l'URL commence à p + 1 et s'étend jusqu'à juste avant ')'
                     string target = text.substring(p + 1, q - (p + 1));
                     if (is_img) {
-                        // Image => pas de segment texte; cela devrait idéalement être un nœud bloc, mais si inline, on garde alt comme texte
+                        // Image => créer segment avec alt text et URL de l'image
                         var copy = new Gee.HashSet<TextFormatting>();
                         copy.add_all(active_formats);
                         var seg = new TextSegment(label, copy);
-                        // Pas de link_href pour image
+                        seg.image_src = target;
                         segments.add(seg);
                     } else {
                         var copy = new Gee.HashSet<TextFormatting>();

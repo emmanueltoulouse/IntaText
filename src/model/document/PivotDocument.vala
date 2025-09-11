@@ -224,6 +224,8 @@ public string text;
 public Gee.HashSet<TextFormatting> formats;
 // Optionnel: lien associé à ce segment (href). Null si non-lié.
 public string? link_href;
+// Optionnel: URL d'image si ce segment représente une image inline
+public string? image_src;
 // Préférence de délimiteur pour export (préserve le style d'origine)
 public string? bold_marker;    // "**" ou "__"
 public string? italic_marker;  // "*" ou "_"
@@ -270,8 +272,12 @@ public string to_markdown(){
         sb.append("</span>");
         result = sb.str;
     }
-    // Encapsuler dans un lien si présent
-    if (link_href != null && link_href.strip() != "") {
+    // Gestion des images (priorité sur les liens)
+    if (image_src != null && image_src.strip() != "") {
+        result = "![" + result + "](" + image_src + ")";
+    }
+    // Encapsuler dans un lien si présent (seulement si pas d'image)
+    else if (link_href != null && link_href.strip() != "") {
         result = "[" + result + "](" + link_href + ")";
     }
     return result;
@@ -286,6 +292,7 @@ public Json.Object to_json(){
     }
     obj.set_array_member("formats", formats_array);
     if (link_href != null && link_href != "") obj.set_string_member("link", link_href);
+    if (image_src != null && image_src != "") obj.set_string_member("image", image_src);
     if (bold_marker != null && bold_marker != "") obj.set_string_member("bold_marker", bold_marker);
     if (italic_marker != null && italic_marker != "") obj.set_string_member("italic_marker", italic_marker);
     if (fg_color != null && fg_color != "") obj.set_string_member("fg_color", fg_color);
@@ -584,11 +591,90 @@ public new static PivotListItem from_json(Json.Object node) throws Error {
 }
 }
 
+public class PivotTableCell : GLib.Object {
+    public Gee.List<TextSegment> segments = new Gee.ArrayList<TextSegment>();
+
+    public PivotTableCell() {
+        base();
+    }
+
+    public PivotTableCell.from_segments(Gee.List<TextSegment> segments) {
+        base();
+        foreach (var segment in segments) {
+            this.segments.add(segment);
+        }
+    }
+
+    public PivotTableCell.from_text(string text) {
+        base();
+        this.segments.add(new TextSegment(text, new Gee.HashSet<TextFormatting>()));
+    }
+
+    public string to_plain_text() {
+        var builder = new StringBuilder();
+        foreach (var segment in segments) {
+            builder.append(segment.text);
+        }
+        return builder.str;
+    }
+
+    public string to_markdown() {
+        var builder = new StringBuilder();
+        foreach (var segment in segments) {
+            builder.append(segment.to_markdown());
+        }
+        return builder.str;
+    }
+
+    public Json.Object to_json() {
+        var obj = new Json.Object();
+        var segments_array = new Json.Array();
+        foreach (var segment in segments) {
+            segments_array.add_object_element(segment.to_json());
+        }
+        obj.set_array_member("segments", segments_array);
+        return obj;
+    }
+
+    public static PivotTableCell from_json(Json.Object node) throws Error {
+        var cell = new PivotTableCell();
+        if (node.has_member("segments")) {
+            var segments_array = node.get_array_member("segments");
+            foreach (var segment_node in segments_array.get_elements()) {
+                if (segment_node.get_node_type() == Json.NodeType.OBJECT) {
+                    cell.segments.add(TextSegment.from_json(segment_node.get_object()));
+                }
+            }
+        }
+        return cell;
+    }
+}
+
 // Spécifier GLib.Object
 public class PivotTable : PivotNode {
-// Rendre 'rows' public pour l'instant pour corriger l'erreur d'accès
-// Une meilleure solution serait un getter/setter ou une méthode dédiée
-public Gee.List<Gee.List<string> > rows = new Gee.ArrayList<Gee.List<string> >();
+// Remplacer par une structure supportant les TextSegment
+public Gee.List<Gee.List<PivotTableCell>> rows = new Gee.ArrayList<Gee.List<PivotTableCell>>();
+
+// Méthode de compatibilité pour l'ancien accès string
+public void add_row_from_strings(Gee.List<string> string_row) {
+    var cell_row = new Gee.ArrayList<PivotTableCell>();
+    foreach (string str in string_row) {
+        cell_row.add(new PivotTableCell.from_text(str));
+    }
+    rows.add(cell_row);
+}
+
+// Méthode pour accéder aux données comme strings (compatibilité)
+public Gee.List<string> get_row_as_strings(int row_index) {
+    var string_row = new Gee.ArrayList<string>();
+    if (row_index >= 0 && row_index < rows.size) {
+        foreach (var cell in rows[row_index]) {
+            string_row.add(cell.to_plain_text());
+        }
+    }
+    return string_row;
+}
+
 public override string to_markdown(){
     if (rows.size == 0) return "";
 
@@ -597,15 +683,15 @@ public override string to_markdown(){
     // Première ligne - En-têtes
     if (rows.size > 0) {
         builder.append("| ");
-        foreach (string cell in rows[0]) {
-            builder.append(cell ?? "");
+        foreach (PivotTableCell cell in rows[0]) {
+            builder.append(cell.to_markdown());
             builder.append(" | ");
         }
         builder.append("\n");
 
         // Ligne de séparation
         builder.append("|");
-        foreach (string cell in rows[0]) {
+        foreach (PivotTableCell cell in rows[0]) {
             builder.append("---|");
         }
         builder.append("\n");
@@ -613,8 +699,8 @@ public override string to_markdown(){
         // Lignes de données
         for (int i = 1; i < rows.size; i++) {
             builder.append("| ");
-            foreach (string cell in rows[i]) {
-                builder.append(cell ?? "");
+            foreach (PivotTableCell cell in rows[i]) {
+                builder.append(cell.to_markdown());
                 builder.append(" | ");
             }
             builder.append("\n");
@@ -631,7 +717,7 @@ public override string to_html(){
         builder.append("  <tr>");
         foreach (var cell in row){
             builder.append("<td>");
-            builder.append(cell ?? "");
+            builder.append(cell.to_plain_text());
             builder.append("</td>");
         }
         builder.append("</tr>\n");
@@ -647,7 +733,7 @@ public override Json.Object to_json(){
     foreach (var row in rows){
         var row_array = new Json.Array();
         foreach (var cell in row){
-            row_array.add_string_element(cell ?? "");
+            row_array.add_object_element(cell.to_json());
         }
         rows_array.add_array_element(row_array);
     }
@@ -662,14 +748,18 @@ public new static PivotTable from_json(Json.Object node) throws Error {
         var rows_array = node.get_array_member("rows");
         foreach (var row_node in rows_array.get_elements()){
             if (row_node.get_node_type() == Json.NodeType.ARRAY){
-                var row_list = new Gee.ArrayList<string>();
+                var row_list = new Gee.ArrayList<PivotTableCell>();
                 var cells_array = row_node.get_array();
                 foreach (var cell_node in cells_array.get_elements()){
-                    if (cell_node.get_node_type() == Json.NodeType.VALUE){
-                        row_list.add(cell_node.get_string());
-                    }
-                    else{
-                        row_list.add("");         // Ajouter une chaîne vide si ce n'est pas une chaîne
+                    if (cell_node.get_node_type() == Json.NodeType.OBJECT) {
+                        // Nouvelle structure avec segments
+                        row_list.add(PivotTableCell.from_json(cell_node.get_object()));
+                    } else if (cell_node.get_node_type() == Json.NodeType.VALUE){
+                        // Compatibilité avec l'ancienne structure string
+                        row_list.add(new PivotTableCell.from_text(cell_node.get_string()));
+                    } else {
+                        // Fallback: cellule vide
+                        row_list.add(new PivotTableCell.from_text(""));
                     }
                 }
                 table.rows.add(row_list);

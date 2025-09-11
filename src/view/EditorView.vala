@@ -16,6 +16,10 @@ private string _current_file_path = "";
 private Gtk.Button? text_color_button;
 private Gtk.Button? bg_color_button;
 
+// Gestion de l'état initial pour l'annulation
+private string initial_content = "";
+private bool has_initial_state = false;
+
 private DocumentSource _source = DocumentSource.UNKNOWN;
 
 public bool has_unsaved_changes {
@@ -201,22 +205,58 @@ private void initialize_ui() {
     insert_group.append(btn_table);
     format_bar.append(insert_group);
 
-    // Boutons de couleurs
+    // Séparateur
+    var sep4 = new Gtk.Separator(Orientation.VERTICAL);
+    sep4.add_css_class("spacer");
+    format_bar.append(sep4);
+
+    // Groupe Couleurs
+    var color_group = new Gtk.Box(Orientation.HORIZONTAL, 0);
+    color_group.add_css_class("linked");
+
     text_color_button = new Gtk.Button();
     text_color_button.set_tooltip_text(_("Couleur du texte"));
+    text_color_button.add_css_class("flat");
     var text_color_display = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 4);
     text_color_display.append(new Gtk.Label("A"));
     text_color_display.add_css_class("text-color-display");
     text_color_button.set_child(text_color_display);
-    format_bar.append(text_color_button);
 
     bg_color_button = new Gtk.Button();
     bg_color_button.set_tooltip_text(_("Couleur de fond"));
+    bg_color_button.add_css_class("flat");
     var bg_color_display = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 4);
     bg_color_display.append(new Gtk.Label("■"));
     bg_color_display.add_css_class("bg-color-display");
     bg_color_button.set_child(bg_color_display);
-    format_bar.append(bg_color_button);
+
+    color_group.append(text_color_button);
+    color_group.append(bg_color_button);
+    format_bar.append(color_group);
+
+    // Séparateur
+    var sep5 = new Gtk.Separator(Orientation.VERTICAL);
+    sep5.add_css_class("spacer");
+    format_bar.append(sep5);
+
+    // Groupe Indentation
+    var indent_group = new Gtk.Box(Orientation.HORIZONTAL, 0);
+    indent_group.add_css_class("linked");
+
+    var btn_indent_left = make_plain_btn_from_candidates(
+        { "format-indent-less-symbolic", "format-unindent-symbolic", "go-previous-symbolic" },
+        "◀",
+        _("Réduire l'indentation")
+    );
+    var btn_indent_right = make_plain_btn_from_candidates(
+        { "format-indent-more-symbolic", "format-indent-symbolic", "go-next-symbolic" },
+        "▶",
+        _("Augmenter l'indentation")
+    );
+    
+    indent_group.append(btn_indent_left);
+    indent_group.append(btn_indent_right);
+    format_bar.append(indent_group);
 
     // Handlers pour les boutons de formatage
 
@@ -376,7 +416,7 @@ private void initialize_ui() {
     });
     btn_image.clicked.connect(() => {
         if (wysiwyg_editor == null) return;
-        // Popover simple pour saisir chemin et texte alternatif
+        // Popover pour saisir chemin et texte alternatif avec sélecteur de fichiers
         var pop = new Gtk.Popover();
         pop.set_has_arrow(true);
         pop.set_parent(btn_image);
@@ -385,8 +425,16 @@ private void initialize_ui() {
         box.set_margin_bottom(8);
         box.set_margin_start(8);
         box.set_margin_end(8);
+        
+        // Ligne pour le chemin de fichier avec bouton parcourir
+        var path_box = new Gtk.Box(Orientation.HORIZONTAL, 6);
         var entry_path = new Gtk.Entry();
         entry_path.set_placeholder_text(_("Chemin de l'image"));
+        entry_path.set_hexpand(true);
+        var browse_btn = new Gtk.Button.with_label(_("Parcourir..."));
+        path_box.append(entry_path);
+        path_box.append(browse_btn);
+        
         var entry_alt = new Gtk.Entry();
         entry_alt.set_placeholder_text(_("Texte alternatif"));
         var actions = new Gtk.Box(Orientation.HORIZONTAL, 6);
@@ -395,11 +443,59 @@ private void initialize_ui() {
         actions.append(cancel_btn);
         actions.append(ok_btn);
         box.append(new Gtk.Label(_("Fichier")));
-        box.append(entry_path);
+        box.append(path_box);
         box.append(new Gtk.Label(_("Texte alternatif")));
         box.append(entry_alt);
         box.append(actions);
         pop.set_child(box);
+        
+        // Action pour le bouton parcourir
+        browse_btn.clicked.connect(() => {
+            var file_dialog = new Gtk.FileDialog();
+            file_dialog.set_title(_("Sélectionner une image"));
+            
+            // Filtres pour les images
+            var filters = new GLib.ListStore(typeof(Gtk.FileFilter));
+            var image_filter = new Gtk.FileFilter();
+            image_filter.add_mime_type("image/*");
+            image_filter.add_pattern("*.png");
+            image_filter.add_pattern("*.jpg");
+            image_filter.add_pattern("*.jpeg");
+            image_filter.add_pattern("*.gif");
+            image_filter.add_pattern("*.bmp");
+            image_filter.add_pattern("*.svg");
+            image_filter.add_pattern("*.webp");
+            filters.append(image_filter);
+            
+            var all_filter = new Gtk.FileFilter();
+            all_filter.add_pattern("*");
+            filters.append(all_filter);
+            
+            file_dialog.set_filters(filters);
+            file_dialog.set_default_filter(image_filter);
+            
+            file_dialog.open.begin(get_root() as Gtk.Window, null, (obj, res) => {
+                try {
+                    var file = file_dialog.open.end(res);
+                    if (file != null) {
+                        entry_path.set_text(file.get_path() ?? file.get_uri());
+                        // Remplir automatiquement le texte alternatif avec le nom du fichier si vide
+                        if (entry_alt.get_text().strip() == "") {
+                            string basename = file.get_basename() ?? "";
+                            // Enlever l'extension pour le texte alternatif
+                            int dot_pos = basename.last_index_of(".");
+                            if (dot_pos > 0) {
+                                basename = basename.substring(0, dot_pos);
+                            }
+                            entry_alt.set_text(basename);
+                        }
+                    }
+                } catch (Error e) {
+                    // L'utilisateur a annulé ou il y a eu une erreur
+                }
+            });
+        });
+        
         cancel_btn.clicked.connect(() => pop.popdown());
         ok_btn.clicked.connect(() => {
             string p = entry_path.get_text();
@@ -436,11 +532,24 @@ private void initialize_ui() {
     btn_h1.clicked.connect(() => { if (wysiwyg_editor != null) { wysiwyg_editor.apply_heading_action(1); set_heading_buttons(1);} });
     btn_h2.clicked.connect(() => { if (wysiwyg_editor != null) { wysiwyg_editor.apply_heading_action(2); set_heading_buttons(2);} });
     btn_h3.clicked.connect(() => { if (wysiwyg_editor != null) { wysiwyg_editor.apply_heading_action(3); set_heading_buttons(3);} });
+    
+    // Handlers pour les boutons d'indentation
+    btn_indent_left.clicked.connect(() => {
+        if (wysiwyg_editor != null) wysiwyg_editor.decrease_indent();
+    });
+    btn_indent_right.clicked.connect(() => {
+        if (wysiwyg_editor != null) wysiwyg_editor.increase_indent();
+    });
     // Détection des modifications
     var buf = wysiwyg_editor.get_buffer();
     buf.changed.connect(() => {
-                has_unsaved_changes = true;
-            });
+        // Vérifier si on est revenu à l'état initial après des modifications
+        if (is_at_initial_state()) {
+            has_unsaved_changes = false;
+        } else {
+            has_unsaved_changes = true;
+        }
+    });
     // Suivre la position du curseur
     void sync_toggle_states() {
         if (wysiwyg_editor == null) return;
@@ -479,6 +588,9 @@ private void initialize_ui() {
     family = sanitize_font_family(family);
     string color = cfg.get_string("Editor", "font_color", "#222222");
     set_editor_style(size, family, color);
+    
+    // Définir l'état initial pour les nouveaux documents vides
+    set_initial_state();
 }
 
 // === MÉTHODES DE LA CLASSE ===
@@ -528,6 +640,9 @@ public void load_document(PivotDocument document) {
     // Rendu riche à partir du document pivot
     wysiwyg_editor.load_pivot_document(document);
         has_unsaved_changes = false;
+        
+        // Définir l'état initial pour le système d'annulation
+        set_initial_state();
     }
 }
 
@@ -667,6 +782,77 @@ private void emit_cursor_position() {
     int line, col;
     get_cursor_position(out line, out col);
     cursor_position_changed(line, col);
+}
+
+// === GESTION DE L'ANNULATION ===
+
+// Stocke l'état initial du buffer (appelé après le chargement d'un fichier)
+public void set_initial_state() {
+    if (wysiwyg_editor == null) return;
+    
+    var buffer = wysiwyg_editor.get_buffer();
+    Gtk.TextIter start, end;
+    buffer.get_bounds(out start, out end);
+    initial_content = buffer.get_text(start, end, false);
+    has_initial_state = true;
+    has_unsaved_changes = false;
+}
+
+// Vérifie si le contenu actuel correspond à l'état initial
+private bool is_at_initial_state() {
+    if (!has_initial_state || wysiwyg_editor == null) return false;
+    
+    var buffer = wysiwyg_editor.get_buffer();
+    Gtk.TextIter start, end;
+    buffer.get_bounds(out start, out end);
+    string current_content = buffer.get_text(start, end, false);
+    
+    return current_content == initial_content;
+}
+
+// Effectue une annulation (Ctrl+Z) avec limitation à l'état initial
+public void perform_undo() {
+    if (wysiwyg_editor == null) return;
+    
+    var buffer = wysiwyg_editor.get_buffer();
+    
+    // Vérifier si on peut annuler
+    if (!buffer.get_can_undo()) return;
+    
+    // Si on est déjà à l'état initial, ne pas annuler davantage
+    if (is_at_initial_state()) {
+        return; // Bloquer l'annulation à l'état initial
+    }
+    
+    // Effectuer l'annulation
+    buffer.undo();
+    
+    // Vérifier si après l'annulation on est à l'état initial
+    if (is_at_initial_state()) {
+        has_unsaved_changes = false;
+    } else {
+        has_unsaved_changes = true;
+    }
+}
+
+// Effectue un rétablissement (Ctrl+Shift+Z)
+public void perform_redo() {
+    if (wysiwyg_editor == null) return;
+    
+    var buffer = wysiwyg_editor.get_buffer();
+    
+    // Vérifier si on peut rétablir
+    if (!buffer.get_can_redo()) return;
+    
+    // Effectuer le rétablissement
+    buffer.redo();
+    
+    // Vérifier si après le rétablissement on est à l'état initial
+    if (is_at_initial_state()) {
+        has_unsaved_changes = false;
+    } else {
+        has_unsaved_changes = true;
+    }
 }
 
 // Récupère la position du curseur (1-based pour ligne/colonne)
@@ -829,12 +1015,12 @@ private void create_and_insert_table(int rows, int cols, bool has_headers) {
     var table = new PivotTable();
 
     for (int i = 0; i < rows; i++) {
-        var row = new Gee.ArrayList<string>();
+        var row = new Gee.ArrayList<PivotTableCell>();
         for (int j = 0; j < cols; j++) {
             if (i == 0 && has_headers) {
-                row.add("En-tête " + (j + 1).to_string());
+                row.add(new PivotTableCell.from_text("En-tête " + (j + 1).to_string()));
             } else {
-                row.add("Cellule " + (i + 1).to_string() + "," + (j + 1).to_string());
+                row.add(new PivotTableCell.from_text("Cellule " + (i + 1).to_string() + "," + (j + 1).to_string()));
             }
         }
         table.rows.add(row);

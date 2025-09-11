@@ -10,6 +10,40 @@
         - 'setext': H1 et H2 en style Setext (==== et ----), H3+ restent en ATX.
       </description>
     </key>
+
+    <!-- Configuration des plugins -->
+    <key name="plugin-enabled-list" type="as">
+      <default>[]</default>
+      <summary>Liste des plugins activés</summary>
+      <description>Liste des IDs des plugins actuellement activés</description>
+    </key>
+
+    <key name="plugin-disabled-list" type="as">
+      <default>[]</default>
+      <summary>Liste des plugins désactivés</summary>
+      <description>Liste des IDs des plugins explicitement désactivés par l'utilisateur</description>
+    </key>
+
+    <key name="plugin-auto-discovery" type="b">
+      <default>true</default>
+      <summary>Découverte automatique des plugins</summary>
+      <description>Permet la découverte et le chargement automatique des nouveaux plugins</description>
+    </key>
+
+    <key name="plugin-user-directory" type="s">
+      <default>''</default>
+      <summary>Répertoire utilisateur des plugins</summary>
+      <description>Répertoire personnalisé pour les plugins utilisateur (vide = répertoire par défaut)</description>
+    </key>
+  </schema>
+
+  <!-- Schéma pour les configurations individuelles de plugins -->
+  <schema id="com.cabineteto.IntaText.plugin" path="/com/cabineteto/IntaText/plugins/">
+    <key name="configurations" type="a{sa{sv}}">
+      <default>{}</default>
+      <summary>Configurations des plugins</summary>
+      <description>Dictionnaire des configurations pour chaque plugin (plugin_id -> configuration)</description>
+    </key>
   </schema>
 
 </schemalist>

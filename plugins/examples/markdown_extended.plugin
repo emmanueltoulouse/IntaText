@@ -1,0 +1,21 @@
+[Plugin]
+Id=markdown_extended
+Name=Markdown Extended
+Version=1.0.0
+Author=IntaText Team
+Type=Format
+Description=Support étendu du Markdown avec tableaux, code, et extensions
+Enabled=true
+Dependencies=
+
+[FormatPlugin]
+SupportedExtensions=.md,.markdown,.mdown
+MimeTypes=text/markdown,text/x-markdown
+SupportsImport=true
+SupportsExport=true
+
+[Configuration]
+# Options spécifiques au plugin
+EnableTables=true
+EnableCodeBlocks=true
+EnableMathJax=false

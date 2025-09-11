@@ -1,6 +1,17 @@
 using Gee;
 
 namespace IntaText {
+
+/**
+ * Types de tri disponibles pour l'explorateur de fichiers
+ */
+public enum SortType {
+    DATE_DESC,      // Date de modification décroissante (par défaut)
+    DATE_ASC,       // Date de modification croissante
+    ALPHABETICAL,   // Ordre alphabétique par nom
+    EXTENSION       // Tri par extension de fichier
+}
+
 /**
   * Modèle principal pour l'explorateur de fichiers
   * Gère les chemins par défaut, les favoris et l'interaction avec le système de fichiers
@@ -86,6 +97,32 @@ public bool search_bar_enabled {
 }
 // Signal émis lorsque l'état d'affichage de la barre de recherche change
 public signal void search_bar_enabled_changed(bool enabled);
+// *** FIN NOUVEAU ***
+
+// *** NOUVEAU : Propriété et signal pour le tri des fichiers ***
+private SortType _current_sort_type = SortType.DATE_DESC; // Par défaut : date décroissante
+public SortType current_sort_type {
+    get { return _current_sort_type; }
+    set {
+        if (_current_sort_type != value) {
+            _current_sort_type = value;
+            // Invalider le cache pour forcer le retriement
+            invalidate_all_cache();
+            sort_type_changed(_current_sort_type);
+            notify_property("current-sort-type");
+        }
+    }
+}
+// Signal émis lorsque le type de tri change
+public signal void sort_type_changed(SortType sort_type);
+
+/**
+ * Invalide tout le cache pour forcer le retriement
+ */
+private void invalidate_all_cache() {
+    directory_cache.remove_all();
+    cache_keys.clear();
+}
 // *** FIN NOUVEAU ***
 
 // Signaux
@@ -451,6 +488,24 @@ public void load_from_config(ConfigManager config_manager) {
     this.search_bar_enabled = config_manager.get_boolean("Explorer", "search_bar_enabled", true);
     // *** FIN NOUVEAU ***
 
+    // *** NOUVEAU : Charger le type de tri ***
+    string sort_type_str = config_manager.get_string("Explorer", "sort_type", "DATE_DESC");
+    switch (sort_type_str) {
+        case "DATE_ASC":
+            this.current_sort_type = SortType.DATE_ASC;
+            break;
+        case "ALPHABETICAL":
+            this.current_sort_type = SortType.ALPHABETICAL;
+            break;
+        case "EXTENSION":
+            this.current_sort_type = SortType.EXTENSION;
+            break;
+        default:
+            this.current_sort_type = SortType.DATE_DESC;
+            break;
+    }
+    // *** FIN NOUVEAU ***
+
     // Charger les favoris
     string favorites_str = config_manager.get_string("Explorer", "favorites", "");
     if (favorites_str != "") {
@@ -511,6 +566,25 @@ public void save_to_config(ConfigManager config_manager) {
 
     // *** NOUVEAU : Sauvegarder l'état de la barre de recherche ***
     config_manager.set_boolean("Explorer", "search_bar_enabled", search_bar_enabled);
+    // *** FIN NOUVEAU ***
+
+    // *** NOUVEAU : Sauvegarder le type de tri ***
+    string sort_type_str = "";
+    switch (current_sort_type) {
+        case SortType.DATE_DESC:
+            sort_type_str = "DATE_DESC";
+            break;
+        case SortType.DATE_ASC:
+            sort_type_str = "DATE_ASC";
+            break;
+        case SortType.ALPHABETICAL:
+            sort_type_str = "ALPHABETICAL";
+            break;
+        case SortType.EXTENSION:
+            sort_type_str = "EXTENSION";
+            break;
+    }
+    config_manager.set_string("Explorer", "sort_type", sort_type_str);
     // *** FIN NOUVEAU ***
 }
 
@@ -714,9 +788,18 @@ public Gee.ArrayList<FileItemModel> get_directory_content(string path) {
     // Vérifier si le contenu est déjà dans le cache
     var cached_items = directory_cache.get(path);
     if (cached_items != null) {
+        // Faire une copie pour éviter de modifier le cache original
+        var items_copy = new Gee.ArrayList<FileItemModel>();
+        foreach (var item in cached_items) {
+            items_copy.add(item);
+        }
+        
+        // Re-trier les éléments selon les préférences actuelles
+        sort_file_items(items_copy);
+        
         // Mettre à jour les emplacements récents quand même
         add_to_recent_locations(path);
-        return cached_items;
+        return items_copy;
     }
 
     // Si pas dans le cache, charger normalement
@@ -738,14 +821,8 @@ public Gee.ArrayList<FileItemModel> get_directory_content(string path) {
             }
         }
 
-        // Trier: d'abord les dossiers, puis les fichiers, par ordre alphabétique
-        items.sort((a, b) => {
-                    if (a.is_directory() && !b.is_directory())
-                        return -1;
-                    if (!a.is_directory() && b.is_directory())
-                        return 1;
-                    return a.name.collate(b.name);
-                });
+        // Trier les éléments selon les préférences utilisateur
+        sort_file_items(items);
 
         // Ajouter aux emplacements récents
         add_to_recent_locations(path);
@@ -1196,6 +1273,60 @@ public Gee.List<ExtensionInfo> get_available_extensions_with_labels() {
         extensions.add(new ExtensionInfo("md", "Markdown"));
     }
     return extensions;
+}
+
+/**
+ * Trie une liste de fichiers selon le type de tri sélectionné
+ * Ordre : favoris en tête, puis dossiers, puis fichiers triés
+ */
+private void sort_file_items(Gee.ArrayList<FileItemModel> items) {
+    items.sort((a, b) => {
+        // 1. Les favoris d'abord
+        bool a_is_favorite = favorites.contains(a.path);
+        bool b_is_favorite = favorites.contains(b.path);
+        
+        if (a_is_favorite && !b_is_favorite) return -1;
+        if (!a_is_favorite && b_is_favorite) return 1;
+        
+        // 2. Puis les dossiers (sauf s'ils sont favoris, déjà gérés)
+        if (!a_is_favorite && !b_is_favorite) {
+            if (a.is_directory() && !b.is_directory()) return -1;
+            if (!a.is_directory() && b.is_directory()) return 1;
+        }
+        
+        // 3. Enfin, tri des fichiers selon le type sélectionné
+        return compare_files_by_sort_type(a, b, _current_sort_type);
+    });
+}
+
+/**
+ * Compare deux fichiers selon le type de tri spécifié
+ */
+private int compare_files_by_sort_type(FileItemModel a, FileItemModel b, SortType sort_type) {
+    switch (sort_type) {
+        case SortType.DATE_DESC:
+            // Date de modification décroissante (plus récent en premier)
+            return b.modified_time.compare(a.modified_time);
+            
+        case SortType.DATE_ASC:
+            // Date de modification croissante (plus ancien en premier)
+            return a.modified_time.compare(b.modified_time);
+            
+        case SortType.ALPHABETICAL:
+            // Ordre alphabétique par nom
+            return a.name.collate(b.name);
+            
+        case SortType.EXTENSION:
+            // Tri par extension, puis par nom
+            string a_ext = a.get_extension();
+            string b_ext = b.get_extension();
+            int ext_cmp = a_ext.collate(b_ext);
+            if (ext_cmp != 0) return ext_cmp;
+            return a.name.collate(b.name); // Même extension, trier par nom
+            
+        default:
+            return a.name.collate(b.name);
+    }
 }
 }
 }

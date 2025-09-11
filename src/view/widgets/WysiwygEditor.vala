@@ -70,6 +70,9 @@ public WysiwygEditor() {
     // Gestionnaire pour redimensionnement de la fenêtre (mise à jour des traits)
     this.notify["allocated-width"].connect(this.on_size_changed);
 
+    // Gestionnaires pour les interactions avec les liens
+    setup_link_interactions();
+
     // Commenté temporairement
     // buffer.changed.connect(() => {
     //     buffer_changed();
@@ -164,6 +167,151 @@ private void ensure_tags() {
         tag_table_border = buffer.create_tag("table_border",
                                            "foreground", "#CCCCCC",
                                            "family", "monospace");
+    }
+}
+
+// Configure les interactions avec les liens (survol et ctrl+click)
+private void setup_link_interactions() {
+    // Gestionnaire de mouvement de souris pour le survol des liens
+    var motion_controller = new Gtk.EventControllerMotion();
+    motion_controller.motion.connect(on_mouse_motion);
+    this.add_controller(motion_controller);
+
+    // Gestionnaire de clics pour Ctrl+Click sur les liens
+    var click_controller = new Gtk.GestureClick();
+    click_controller.pressed.connect((n_press, x, y) => {
+        on_mouse_click(click_controller, n_press, x, y);
+    });
+    this.add_controller(click_controller);
+}
+
+// Gestionnaire du mouvement de souris pour changer le curseur sur les liens
+private void on_mouse_motion(double x, double y) {
+    // Convertir les coordonnées fenêtre en coordonnées buffer
+    int buffer_x, buffer_y;
+    this.window_to_buffer_coords(Gtk.TextWindowType.TEXT, (int)x, (int)y, out buffer_x, out buffer_y);
+
+    // Obtenir l'itérateur à cette position
+    TextIter iter;
+    if (this.get_iter_at_location(out iter, buffer_x, buffer_y)) {
+        bool is_on_link = false;
+        
+        // Vérifier si on est sur un lien (tag_link générique)
+        if (iter.has_tag(tag_link)) {
+            is_on_link = true;
+        } else {
+            // Vérifier si on est sur un lien avec URL (tags "link::u:...")
+            var tags = iter.get_tags();
+            foreach (var tag in tags) {
+                if (tag.name != null && tag.name.has_prefix("link::u:")) {
+                    is_on_link = true;
+                    break;
+                }
+            }
+        }
+        
+        if (is_on_link) {
+            // Changer le curseur en main
+            this.set_cursor_from_name("pointer");
+        } else {
+            // Remettre le curseur normal
+            this.set_cursor_from_name("text");
+        }
+    } else {
+        // Si on ne peut pas obtenir d'itérateur, remettre le curseur normal
+        this.set_cursor_from_name("text");
+    }
+}
+
+// Gestionnaire des clics pour ouvrir les liens avec Ctrl+Click
+private void on_mouse_click(Gtk.GestureClick gesture, int n_press, double x, double y) {
+    // Vérifier si c'est un Ctrl+Click
+    var event = gesture.get_last_event(gesture.get_last_updated_sequence());
+    if (event == null) return;
+    
+    var modifiers = event.get_modifier_state();
+    // Utiliser une comparaison directe avec la valeur du masque
+    if ((modifiers & (int)Gdk.ModifierType.CONTROL_MASK) == 0) {
+        return; // Pas un Ctrl+Click
+    }
+
+    // Convertir les coordonnées fenêtre en coordonnées buffer
+    int buffer_x, buffer_y;
+    this.window_to_buffer_coords(Gtk.TextWindowType.TEXT, (int)x, (int)y, out buffer_x, out buffer_y);
+
+    // Obtenir l'itérateur à cette position
+    TextIter iter;
+    if (this.get_iter_at_location(out iter, buffer_x, buffer_y)) {
+        if (iter.has_tag(tag_link)) {
+            // Trouver l'URL du lien
+            string? url = get_link_url_at_iter(iter);
+            if (url != null && url.length > 0) {
+                open_url_in_browser(url);
+            }
+        }
+    }
+}
+
+// Récupère l'URL d'un lien à partir de l'itérateur
+private string? get_link_url_at_iter(TextIter iter) {
+    // D'abord, chercher dans les tags dynamiques pour trouver l'URL stockée
+    // Les URLs sont stockées dans des tags avec le format "link::u:encoded_url"
+    
+    var tags = iter.get_tags();
+    foreach (var tag in tags) {
+        string tag_name = tag.name;
+        if (tag_name != null && tag_name.has_prefix("link::u:")) {
+            // Décoder l'URL du nom du tag
+            string encoded_url = tag_name.substring("link::u:".length);
+            string decoded_url = GLib.Uri.unescape_string(encoded_url, null);
+            print("URL trouvée dans tag: %s\n", decoded_url);
+            return decoded_url;
+        }
+    }
+    
+    // Fallback: extraire le texte visible du lien et voir si c'est une URL
+    TextIter link_start = iter;
+    TextIter link_end = iter;
+    
+    // Aller au début du lien
+    while (link_start.backward_char() && link_start.has_tag(tag_link)) {
+        // Continue
+    }
+    if (!link_start.has_tag(tag_link)) {
+        link_start.forward_char();
+    }
+    
+    // Aller à la fin du lien
+    while (link_end.forward_char() && link_end.has_tag(tag_link)) {
+        // Continue
+    }
+    
+    // Extraire le texte du lien
+    string link_text = buffer.get_text(link_start, link_end, false);
+    print("Texte du lien extrait: %s\n", link_text);
+    
+    // Si le texte visible est une URL valide, l'utiliser
+    if (is_valid_url(link_text)) {
+        return link_text;
+    }
+    
+    print("Aucune URL valide trouvée pour le lien\n");
+    return null;
+}
+
+// Vérifie si une chaîne est une URL valide
+private bool is_valid_url(string text) {
+    return text.has_prefix("http://") || text.has_prefix("https://") || 
+           text.has_prefix("ftp://") || text.has_prefix("mailto:");
+}
+
+// Ouvre une URL dans le navigateur par défaut
+private void open_url_in_browser(string url) {
+    try {
+        GLib.AppInfo.launch_default_for_uri(url, null);
+        print("Ouverture du lien : %s\n", url);
+    } catch (Error e) {
+        warning("Impossible d'ouvrir l'URL %s : %s", url, e.message);
     }
 }
 
@@ -608,32 +756,117 @@ public void insert_image(string path, string alt_text) {
     TextIter iter;
     buffer.get_iter_at_mark(out iter, buffer.get_insert());
 
-    // Insérer un placeholder textuel lisible
-    string placeholder = alt_text != null && alt_text.strip() != "" ? alt_text : GLib.Path.get_basename(path);
-    if (placeholder == null || placeholder == "") placeholder = "Image";
-
-    TextMark img_start = buffer.create_mark(null, iter, true);
-    buffer.insert(ref iter, placeholder, -1);
-    TextIter start;
-    buffer.get_iter_at_mark(out start, img_start);
-    buffer.delete_mark(img_start);
-    // Appliquer un tag dédié image pour repérage
-    // Appliquer tag générique image
-    buffer.apply_tag(tag_image, start, iter);
-    // Tags de données pour stocker src/alt sous forme de noms encodés
-    string enc_src = GLib.Uri.escape_string(path, null, false);
-    Gtk.TextTag src_tag = (Gtk.TextTag) buffer.get_tag_table().lookup("image-src::u:" + enc_src);
-    if (src_tag == null) src_tag = buffer.create_tag("image-src::u:" + enc_src);
-    buffer.apply_tag(src_tag, start, iter);
-    string src_name = "image-src::u:" + enc_src; if (!image_src_tag_names.contains(src_name)) image_src_tag_names.add(src_name);
-    string enc_alt = GLib.Uri.escape_string(alt_text ?? "", null, false);
-    Gtk.TextTag alt_tag = (Gtk.TextTag) buffer.get_tag_table().lookup("image-alt::u:" + enc_alt);
-    if (alt_tag == null) alt_tag = buffer.create_tag("image-alt::u:" + enc_alt);
-    buffer.apply_tag(alt_tag, start, iter);
-    string alt_name = "image-alt::u:" + enc_alt; if (!image_alt_tag_names.contains(alt_name)) image_alt_tag_names.add(alt_name);
-
-    // Note: Une implémentation complète nécessiterait d'utiliser GtkTextChildAnchor
-    // pour insérer un widget d'image dans le TextView
+    try {
+        // Créer un anchor pour insérer le widget image
+        var anchor = buffer.create_child_anchor(iter);
+        
+        // Créer un conteneur pour contrôler la taille de l'image
+        var image_container = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 0);
+        image_container.set_halign(Gtk.Align.START);
+        
+        // Créer un widget image
+        var image_widget = new Gtk.Image();
+        
+        // Charger l'image avec gestion d'erreur
+        if (GLib.FileUtils.test(path, GLib.FileTest.EXISTS)) {
+            // Charger l'image originale pour obtenir ses dimensions
+            var original_pixbuf = new Gdk.Pixbuf.from_file(path);
+            var orig_width = original_pixbuf.get_width();
+            var orig_height = original_pixbuf.get_height();
+            
+            int target_width, target_height;
+            
+            // Définir les limites de taille d'affichage dans l'éditeur
+            int max_display_width = 600;   // Largeur max dans l'éditeur
+            int max_display_height = 400;  // Hauteur max dans l'éditeur
+            int min_display_size = 80;     // Taille minimum pour les très petites images
+            
+            // Cas 1: Image très petite (moins de 80px dans toute dimension)
+            if (orig_width < min_display_size || orig_height < min_display_size) {
+                // Agrandir en gardant les proportions jusqu'à atteindre min_display_size
+                double scale = (double)min_display_size / (orig_width > orig_height ? orig_height : orig_width);
+                target_width = (int)(orig_width * scale);
+                target_height = (int)(orig_height * scale);
+            }
+            // Cas 2: Image trop grande (dépasse les limites d'affichage)
+            else if (orig_width > max_display_width || orig_height > max_display_height) {
+                // Réduire en gardant les proportions
+                double scale_w = (double)max_display_width / orig_width;
+                double scale_h = (double)max_display_height / orig_height;
+                double scale = (scale_w < scale_h) ? scale_w : scale_h; // Prendre le plus petit facteur
+                target_width = (int)(orig_width * scale);
+                target_height = (int)(orig_height * scale);
+            }
+            // Cas 3: Image de taille appropriée (entre 80px et les limites max)
+            else {
+                // Garder la taille originale ou la réduire légèrement pour l'éditeur
+                double display_scale = 0.8; // Afficher à 80% de la taille originale pour un meilleur rendu
+                target_width = (int)(orig_width * display_scale);
+                target_height = (int)(orig_height * display_scale);
+                
+                // S'assurer qu'on ne descend pas en dessous du minimum
+                if (target_width < min_display_size || target_height < min_display_size) {
+                    target_width = orig_width;
+                    target_height = orig_height;
+                }
+            }
+            
+            // Redimensionner l'image
+            var pixbuf = new Gdk.Pixbuf.from_file_at_scale(path, target_width, target_height, false);
+            var texture = Gdk.Texture.for_pixbuf(pixbuf);
+            image_widget.set_from_paintable(texture);
+            
+            // Forcer explicitement la taille du widget
+            image_widget.set_size_request(target_width, target_height);
+            image_container.set_size_request(target_width, target_height);
+            
+            // Debug : afficher les tailles calculées
+            print("Image: %s - Original: %dx%d → Target: %dx%d\n", 
+                  GLib.Path.get_basename(path), orig_width, orig_height, target_width, target_height);
+            
+            image_widget.set_tooltip_text(alt_text ?? "");
+        } else {
+            // Image non trouvée, afficher un placeholder plus grand
+            image_widget.set_from_icon_name("image-missing");
+            image_widget.set_pixel_size(64); // Taille plus grande en pixels
+            image_widget.set_tooltip_text("Image introuvable: " + path);
+        }
+        
+        // Ajouter l'image au conteneur
+        image_container.append(image_widget);
+        
+        // Ajouter le conteneur à l'éditeur
+        this.add_child_at_anchor(image_container, anchor);
+        
+        // Stocker les métadonnées de l'image dans des tags pour la conversion
+        TextIter anchor_iter;
+        buffer.get_iter_at_child_anchor(out anchor_iter, anchor);
+        
+        string enc_src = GLib.Uri.escape_string(path, null, false);
+        Gtk.TextTag src_tag = buffer.create_tag("image-src::u:" + enc_src);
+        buffer.apply_tag_by_name("image-src::u:" + enc_src, anchor_iter, anchor_iter);
+        string src_name = "image-src::u:" + enc_src; 
+        if (!image_src_tag_names.contains(src_name)) image_src_tag_names.add(src_name);
+        
+        string enc_alt = GLib.Uri.escape_string(alt_text ?? "", null, false);
+        Gtk.TextTag alt_tag = buffer.create_tag("image-alt::u:" + enc_alt);
+        buffer.apply_tag_by_name("image-alt::u:" + enc_alt, anchor_iter, anchor_iter);
+        string alt_name = "image-alt::u:" + enc_alt; 
+        if (!image_alt_tag_names.contains(alt_name)) image_alt_tag_names.add(alt_name);
+        
+    } catch (Error e) {
+        // En cas d'erreur, insérer un placeholder textuel
+        warning("Erreur lors du chargement de l'image %s: %s", path, e.message);
+        string placeholder = alt_text != null && alt_text.strip() != "" ? alt_text : GLib.Path.get_basename(path);
+        if (placeholder == null || placeholder == "") placeholder = "[Image non trouvée]";
+        
+        TextMark img_start = buffer.create_mark(null, iter, true);
+        buffer.insert(ref iter, placeholder, -1);
+        TextIter start;
+        buffer.get_iter_at_mark(out start, img_start);
+        buffer.delete_mark(img_start);
+        buffer.apply_tag(tag_image, start, iter);
+    }
 }
 
 public void insert_table(int rows, int cols) {
@@ -642,9 +875,9 @@ public void insert_table(int rows, int cols) {
 
     // Initialiser avec des cellules vides
     for (int i = 0; i < rows; i++) {
-        var row = new Gee.ArrayList<string>();
+        var row = new Gee.ArrayList<PivotTableCell>();
         for (int j = 0; j < cols; j++) {
-            row.add("");
+            row.add(new PivotTableCell.from_text(""));
         }
         table.rows.add(row);
     }
@@ -878,19 +1111,21 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
     var table_css_provider = new Gtk.CssProvider();
     try {
         string css_content = @"
-            .table-cell {
+            .table-cell-textview {
                 border: 1px solid #cccccc;
                 background: white;
                 padding: 8px;
                 min-width: 80px;
+                min-height: 30px;
                 font-family: inherit;
             }
-            .table-header {
+            .table-header-textview {
                 border: 1px solid #888888;
                 background: #f0f0f0;
                 font-weight: bold;
                 padding: 10px;
                 min-width: 80px;
+                min-height: 30px;
                 font-family: inherit;
             }
             .table-grid {
@@ -907,82 +1142,63 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
         warning("Impossible de charger le CSS du tableau : %s", e.message);
     }
 
-    // Créer les cellules du tableau
-    var entries = new Gtk.Entry[table.rows.size, num_cols];
+    // Créer les cellules du tableau avec TextView pour supporter le formatage
+    var text_views = new Gtk.TextView[table.rows.size, num_cols];
 
     for (int i = 0; i < table.rows.size; i++) {
         var row = table.rows[i];
         bool is_header = (i == 0);
 
         for (int j = 0; j < num_cols; j++) {
-            var entry = new Gtk.Entry();
-            entry.set_has_frame(false);
+            // Utiliser TextView au lieu d'Entry pour supporter le formatage
+            var text_view = new Gtk.TextView();
+            text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR);
+            text_view.set_accepts_tab(false);
+            text_view.set_editable(true);  // S'assurer que le TextView est éditable
+            text_view.set_cursor_visible(true);  // Afficher le curseur
+            text_view.set_can_focus(true);  // Permettre au TextView de recevoir le focus
 
-            // Contenu de la cellule
+            // Créer un buffer et configurer les tags de formatage
+            var cell_buffer = text_view.get_buffer();
+            setup_text_tags_for_cell_buffer(cell_buffer);
+
+            // Contenu de la cellule avec formatage
             if (row != null && j < row.size && row[j] != null) {
-                entry.set_text(row[j]);
-            } else {
-                entry.set_text("");
+                render_segments_to_cell_buffer(row[j].segments, cell_buffer);
             }
 
             // Appliquer le style approprié
             if (is_header) {
-                entry.add_css_class("table-header");
+                text_view.add_css_class("table-header-textview");
             } else {
-                entry.add_css_class("table-cell");
+                text_view.add_css_class("table-cell-textview");
             }
 
             // Stocker la référence pour les callbacks
-            entries[i, j] = entry;
+            text_views[i, j] = text_view;
 
-            // Connecter le signal de changement de texte pour redimensionnement dynamique
+            // Connecter le signal de changement de texte pour synchronisation
             int row_idx = i, col_idx = j;
-            entry.changed.connect(() => {
-                // Mettre à jour le modèle de données
+            cell_buffer.changed.connect(() => {
+                // Extraire les segments du buffer et mettre à jour le modèle
+                var segments = extract_segments_from_cell_buffer(cell_buffer);
                 if (table.rows.size > row_idx && table.rows[row_idx] != null && table.rows[row_idx].size > col_idx) {
-                    table.rows[row_idx][col_idx] = entry.get_text();
-                }
-
-                // Calculer la nouvelle largeur nécessaire pour toute la colonne
-                int max_width_needed = 10; // Largeur minimale
-                for (int r = 0; r < table.rows.size; r++) {
-                    if (entries[r, col_idx] != null) {
-                        int content_width = entries[r, col_idx].get_text().length + 2; // +2 pour padding
-                        if (content_width > max_width_needed) {
-                            max_width_needed = content_width;
-                        }
-                    }
-                }
-
-                // Limiter la largeur maximale
-                if (max_width_needed > 50) max_width_needed = 50;
-
-                // Ajuster la largeur de toutes les cellules de cette colonne
-                for (int r = 0; r < table.rows.size; r++) {
-                    if (entries[r, col_idx] != null) {
-                        entries[r, col_idx].set_width_chars(max_width_needed);
-                    }
+                    table.rows[row_idx][col_idx] = new PivotTableCell.from_segments(segments);
                 }
             });
 
-            // Largeur initiale basée sur le contenu maximum de la colonne
-            int initial_width = 10; // Largeur minimale
+            // Ajouter un gestionnaire de clic pour s'assurer que le TextView peut recevoir le focus
+            var click_controller = new Gtk.GestureClick();
+            click_controller.pressed.connect((n_press, x, y) => {
+                text_view.grab_focus();
+            });
+            text_view.add_controller(click_controller);
 
-            // Calculer la largeur optimale pour cette colonne
-            for (int r = 0; r < table.rows.size; r++) {
-                if (table.rows[r] != null && col_idx < table.rows[r].size && table.rows[r][col_idx] != null) {
-                    int content_width = table.rows[r][col_idx].length + 2;
-                    if (content_width > initial_width) {
-                        initial_width = content_width;
-                    }
-                }
-            }
+            // Limiter la hauteur maximale
+            text_view.set_size_request(80, 60); // largeur min, hauteur max
 
-            if (initial_width > 50) initial_width = 50; // Largeur maximale
-            entry.set_width_chars(initial_width);
-
-            // Ajouter l'entry au grid
-            table_grid.attach(entry, j, i, 1, 1);
+            // Ajouter le TextView au grid
+            table_grid.attach(text_view, j, i, 1, 1);
         }
     }
 
@@ -990,7 +1206,7 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
     // pour éviter d'invalider l'itérateur iter passé en référence
     TextIter anchor_iter = iter;
     var anchor = buffer.create_child_anchor(anchor_iter);
-    
+
     // Mettre à jour iter avec la nouvelle position après l'anchor
     iter = anchor_iter;
 
@@ -999,6 +1215,211 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
 
     // Dans GTK4, on utilise set_visible(true) au lieu de show()
     table_grid.set_visible(true);
+}
+
+// Méthodes utilitaires pour le formatage dans les cellules de tableau
+private void setup_text_tags_for_cell_buffer(Gtk.TextBuffer cell_buffer) {
+    var tag_table = cell_buffer.get_tag_table();
+
+    // Créer les tags de base pour le formatage si ils n'existent pas
+    if (tag_table.lookup("bold") == null) {
+        var bold_tag = cell_buffer.create_tag("bold");
+        bold_tag.weight = Pango.Weight.BOLD;
+    }
+
+    if (tag_table.lookup("italic") == null) {
+        var italic_tag = cell_buffer.create_tag("italic");
+        italic_tag.style = Pango.Style.ITALIC;
+    }
+
+    if (tag_table.lookup("underline") == null) {
+        var underline_tag = cell_buffer.create_tag("underline");
+        underline_tag.underline = Pango.Underline.SINGLE;
+    }
+
+    if (tag_table.lookup("strikethrough") == null) {
+        var strikethrough_tag = cell_buffer.create_tag("strikethrough");
+        strikethrough_tag.strikethrough = true;
+    }
+
+    if (tag_table.lookup("code") == null) {
+        var code_tag = cell_buffer.create_tag("code");
+        code_tag.family = "monospace";
+        code_tag.background = "#f0f0f0";
+    }
+
+    // Tag de base pour les liens
+    if (tag_table.lookup("link") == null) {
+        var link_tag = cell_buffer.create_tag("link");
+        link_tag.foreground = "#0066cc";
+        link_tag.underline = Pango.Underline.SINGLE;
+    }
+}
+
+private void render_segments_to_cell_buffer(Gee.List<TextSegment> segments, Gtk.TextBuffer cell_buffer) {
+    cell_buffer.set_text("", 0);
+
+    foreach (var segment in segments) {
+        TextIter end_iter;
+        cell_buffer.get_end_iter(out end_iter);
+
+        var start_offset = end_iter.get_offset();
+        cell_buffer.insert(ref end_iter, segment.text, -1);
+
+        // Appliquer les tags de formatage
+        TextIter start_iter;
+        cell_buffer.get_iter_at_offset(out start_iter, start_offset);
+        cell_buffer.get_end_iter(out end_iter);
+
+        // Gestion des couleurs personnalisées (créer des tags dynamiques)
+        string? color_tag_name = null;
+        if (segment.fg_color != null || segment.bg_color != null) {
+            color_tag_name = "color_" + start_offset.to_string();
+            var tag_table = cell_buffer.get_tag_table();
+            if (tag_table.lookup(color_tag_name) == null) {
+                var color_tag = cell_buffer.create_tag(color_tag_name);
+                if (segment.fg_color != null && segment.fg_color != "") {
+                    color_tag.foreground = segment.fg_color;
+                    color_tag.set_data("fg_color", segment.fg_color);
+                }
+                if (segment.bg_color != null && segment.bg_color != "") {
+                    color_tag.background = segment.bg_color;
+                    color_tag.set_data("bg_color", segment.bg_color);
+                }
+            }
+        }
+
+        // Appliquer les formats de base
+        foreach (var format in segment.formats) {
+            string tag_name = "";
+            switch (format) {
+                case TextFormatting.BOLD:
+                    tag_name = "bold";
+                    break;
+                case TextFormatting.ITALIC:
+                    tag_name = "italic";
+                    break;
+                case TextFormatting.UNDERLINE:
+                    tag_name = "underline";
+                    break;
+                case TextFormatting.STRIKETHROUGH:
+                    tag_name = "strikethrough";
+                    break;
+                case TextFormatting.CODE:
+                    tag_name = "code";
+                    break;
+            }
+
+            if (tag_name != "") {
+                cell_buffer.apply_tag_by_name(tag_name, start_iter, end_iter);
+            }
+        }
+
+        // Appliquer le tag de couleur si nécessaire
+        if (color_tag_name != null) {
+            cell_buffer.apply_tag_by_name(color_tag_name, start_iter, end_iter);
+        }
+
+        // Gestion des liens
+        if (segment.link_href != null && segment.link_href != "") {
+            cell_buffer.apply_tag_by_name("link", start_iter, end_iter);
+            // Stocker l'URL dans les données du tag pour une utilisation future
+            var tag_table = cell_buffer.get_tag_table();
+            var link_tag = tag_table.lookup("link");
+            link_tag.set_data("href", segment.link_href);
+        }
+
+        // Gestion des images (afficher texte alt avec indication visuelle)
+        if (segment.image_src != null && segment.image_src != "") {
+            // Créer un tag spécial pour les images si il n'existe pas
+            var tag_table = cell_buffer.get_tag_table();
+            if (tag_table.lookup("image") == null) {
+                var image_tag = cell_buffer.create_tag("image");
+                image_tag.foreground = "#666666";
+                image_tag.style = Pango.Style.ITALIC;
+                image_tag.background = "#f5f5f5";
+            }
+            cell_buffer.apply_tag_by_name("image", start_iter, end_iter);
+            // Stocker l'URL de l'image
+            var image_tag = tag_table.lookup("image");
+            image_tag.set_data("src", segment.image_src);
+        }
+    }
+}
+
+private Gee.List<TextSegment> extract_segments_from_cell_buffer(Gtk.TextBuffer cell_buffer) {
+    var segments = new Gee.ArrayList<TextSegment>();
+
+    TextIter start_iter, end_iter;
+    cell_buffer.get_bounds(out start_iter, out end_iter);
+
+    string text = cell_buffer.get_text(start_iter, end_iter, false);
+    if (text.length == 0) {
+        return segments;
+    }
+
+    // Pour simplifier, on extrait tout le texte comme un seul segment
+    // Une implémentation plus avancée analyserait les tags appliqués caractère par caractère
+    var formatting_set = new Gee.HashSet<TextFormatting>();
+    string? link_href = null;
+    string? image_src = null;
+    string? fg_color = null;
+    string? bg_color = null;
+
+    // Vérifier quels tags sont appliqués au début du texte
+    var tags = start_iter.get_tags();
+    foreach (var tag in tags) {
+        string tag_name = tag.name ?? "";
+        switch (tag_name) {
+            case "bold":
+                formatting_set.add(TextFormatting.BOLD);
+                break;
+            case "italic":
+                formatting_set.add(TextFormatting.ITALIC);
+                break;
+            case "underline":
+                formatting_set.add(TextFormatting.UNDERLINE);
+                break;
+            case "strikethrough":
+                formatting_set.add(TextFormatting.STRIKETHROUGH);
+                break;
+            case "code":
+                formatting_set.add(TextFormatting.CODE);
+                break;
+            case "link":
+                // Récupérer l'URL stockée dans les données du tag
+                link_href = tag.get_data<string>("href");
+                break;
+            case "image":
+                // Récupérer l'URL de l'image stockée dans les données du tag
+                image_src = tag.get_data<string>("src");
+                break;
+        }
+
+        // Vérifier les tags de couleur dynamiques
+        if (tag_name.has_prefix("color_")) {
+            // Récupérer les couleurs stockées dans les données du tag
+            fg_color = tag.get_data<string>("fg_color");
+            bg_color = tag.get_data<string>("bg_color");
+        }
+    }
+
+    var segment = new TextSegment(text, formatting_set);
+    if (link_href != null) {
+        segment.link_href = link_href;
+    }
+    if (image_src != null) {
+        segment.image_src = image_src;
+    }
+    if (fg_color != null) {
+        segment.fg_color = fg_color;
+    }
+    if (bg_color != null) {
+        segment.bg_color = bg_color;
+    }
+
+    segments.add(segment);
+    return segments;
 }
 // Méthode d'aide pour insérer du texte de manière sécurisée à la fin du buffer
 private void safe_insert_at_end(string text) {
@@ -1095,11 +1516,11 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         }
         else if (node is PivotLink) {
             var pl = (PivotLink) node;
-            
+
             // Obtenir un itérateur frais à la fin du buffer
             TextIter link_iter;
             buffer.get_end_iter(out link_iter);
-            
+
             TextMark lmk = buffer.create_mark(null, link_iter, true);
             buffer.insert(ref link_iter, pl.text ?? pl.href ?? "", -1);
 
@@ -1114,7 +1535,7 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             e = s;
             e.forward_chars((pl.text ?? pl.href ?? "").length);
             buffer.apply_tag(tag_link, s, e);
-            
+
             // attacher un tag unique pour href
             string enc = GLib.Uri.escape_string(pl.href ?? "", null, false);
             string unique = "link::u:" + enc;
@@ -1127,11 +1548,11 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         else if (node is PivotImage) {
             var pi = (PivotImage) node;
             string placeholder = (pi.alt != null && pi.alt != "") ? pi.alt : (pi.src != null ? GLib.Path.get_basename(pi.src) : "Image");
-            
+
             // Obtenir un itérateur frais à la fin du buffer
             TextIter image_iter;
             buffer.get_end_iter(out image_iter);
-            
+
             TextMark im = buffer.create_mark(null, image_iter, true);
             buffer.insert(ref image_iter, placeholder, -1);
 
@@ -1146,7 +1567,7 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             e = s;
             e.forward_chars(placeholder.length);
             buffer.apply_tag(tag_image, s, e);
-            
+
             string encs = GLib.Uri.escape_string(pi.src ?? "", null, false);
             Gtk.TextTag src_tag = (Gtk.TextTag) buffer.get_tag_table().lookup("image-src::u:" + encs);
             if (src_tag == null) src_tag = buffer.create_tag("image-src::u:" + encs);
@@ -1270,7 +1691,7 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             // Obtenir un itérateur frais à la fin du buffer
             TextIter rule_iter;
             buffer.get_end_iter(out rule_iter);
-            
+
             // Créer un trait de séparation qui s'étend sur toute la largeur
             TextMark rule_start = buffer.create_mark(null, rule_iter, true);
 
@@ -1433,6 +1854,12 @@ public PivotDocument get_pivot_document() {
         if (start_it.get_buffer() != buffer || end_it.get_buffer() != buffer) { in_paragraph = false; return; }
         string txt = buffer.get_text(start_it, end_it, false).strip();
         if (txt.length > 0) {
+            // Vérifier si ce n'est pas déjà un titre - si c'est le cas, ne pas traiter comme paragraphe
+            if (start_it.has_tag(tag_heading1) || start_it.has_tag(tag_heading2) || start_it.has_tag(tag_heading3)) {
+                in_paragraph = false;
+                return;
+            }
+
             // Si l'intégralité de la ligne (ou plage) est taguée lien, produire un PivotLink
             Gtk.TextIter s = start_it; Gtk.TextIter e = end_it;
             bool whole_is_link = true;
@@ -2484,6 +2911,315 @@ public void apply_background_color(Gdk.RGBA color) {
             bg_tag = buffer.create_tag("current-background", "background-rgba", color);
         } else {
             bg_tag.set_property("background-rgba", color);
+        }
+    }
+}
+
+/** Augmente l'indentation de la ligne courante ou sélection */
+public void increase_indent() {
+    TextIter start, end;
+    if (buffer.get_selection_bounds(out start, out end)) {
+        // Augmenter l'indentation de toutes les lignes sélectionnées
+        indent_lines_with_smart_numbering(start, end, true);
+    } else {
+        // Détecter le type de contenu sous le curseur
+        Gtk.TextIter cursor;
+        buffer.get_iter_at_mark(out cursor, buffer.get_insert());
+        
+        if (is_heading_line(cursor)) {
+            // Si c'est un titre, indenter seulement cette ligne
+            Gtk.TextIter line_start = cursor;
+            line_start.set_line_offset(0);
+            Gtk.TextIter line_end = cursor;
+            line_end.forward_to_line_end();
+            indent_lines_with_smart_numbering(line_start, line_end, true);
+        } else {
+            // Pour tout le reste (paragraphe normal, liste), indenter tout le paragraphe
+            Gtk.TextIter para_start, para_end;
+            find_current_paragraph_bounds(cursor, out para_start, out para_end);
+            indent_lines_with_smart_numbering(para_start, para_end, true);
+        }
+    }
+}
+
+/** Diminue l'indentation de la ligne courante ou sélection */
+public void decrease_indent() {
+    TextIter start, end;
+    if (buffer.get_selection_bounds(out start, out end)) {
+        // Diminuer l'indentation de toutes les lignes sélectionnées
+        indent_lines_with_smart_numbering(start, end, false);
+    } else {
+        // Détecter le type de contenu sous le curseur
+        Gtk.TextIter cursor;
+        buffer.get_iter_at_mark(out cursor, buffer.get_insert());
+        
+        if (is_heading_line(cursor)) {
+            // Si c'est un titre, désindenter seulement cette ligne
+            Gtk.TextIter line_start = cursor;
+            line_start.set_line_offset(0);
+            Gtk.TextIter line_end = cursor;
+            line_end.forward_to_line_end();
+            indent_lines_with_smart_numbering(line_start, line_end, false);
+        } else {
+            // Pour tout le reste (paragraphe normal, liste), désindenter tout le paragraphe
+            Gtk.TextIter para_start, para_end;
+            find_current_paragraph_bounds(cursor, out para_start, out para_end);
+            indent_lines_with_smart_numbering(para_start, para_end, false);
+        }
+    }
+}
+
+/** Trouve les limites d'un paragraphe à partir d'une position de curseur */
+private void find_current_paragraph_bounds(TextIter cursor, out TextIter start, out TextIter end) {
+    start = cursor;
+    end = cursor;
+    
+    // Trouver le début du paragraphe
+    // Un paragraphe commence après une ligne vide ou au début du buffer
+    while (!start.is_start()) {
+        TextIter line_start = start;
+        line_start.set_line_offset(0);
+        
+        // Vérifier la ligne précédente
+        if (!line_start.backward_line()) {
+            // On est à la première ligne, le paragraphe commence ici
+            start.set_line_offset(0);
+            break;
+        }
+        
+        TextIter prev_line_start = line_start;
+        TextIter prev_line_end = prev_line_start;
+        prev_line_end.forward_to_line_end();
+        
+        string prev_line_text = buffer.get_text(prev_line_start, prev_line_end, false).strip();
+        
+        if (prev_line_text == "") {
+            // Ligne précédente vide, le paragraphe commence à la ligne courante
+            line_start.forward_line();
+            start = line_start;
+            start.set_line_offset(0);
+            break;
+        }
+        
+        // Continuer à remonter
+        start = line_start;
+    }
+    
+    // Trouver la fin du paragraphe
+    // Un paragraphe se termine avant une ligne vide ou à la fin du buffer
+    while (!end.is_end()) {
+        TextIter line_start = end;
+        line_start.set_line_offset(0);
+        TextIter line_end = line_start;
+        line_end.forward_to_line_end();
+        
+        string line_text = buffer.get_text(line_start, line_end, false).strip();
+        
+        // Si la ligne courante est vide, on a atteint la fin du paragraphe
+        if (line_text == "") {
+            // Le paragraphe se termine à la ligne précédente
+            if (end.get_line() > 0) {
+                end.backward_line();
+                end.forward_to_line_end();
+            }
+            break;
+        }
+        
+        // Vérifier la ligne suivante
+        TextIter next_line_start = line_end;
+        if (!next_line_start.forward_line()) {
+            // On est à la dernière ligne, le paragraphe se termine ici
+            end.forward_to_line_end();
+            break;
+        }
+        
+        TextIter next_line_end = next_line_start;
+        next_line_end.forward_to_line_end();
+        
+        string next_line_text = buffer.get_text(next_line_start, next_line_end, false).strip();
+        
+        if (next_line_text == "") {
+            // Ligne suivante vide, le paragraphe se termine à la ligne courante
+            end.forward_to_line_end();
+            break;
+        }
+        
+        // Continuer à descendre
+        end = next_line_start;
+    }
+    
+    // S'assurer que start est au début de sa ligne
+    start.set_line_offset(0);
+}
+
+/** Détecte si la ligne courante est un titre Markdown */
+private bool is_heading_line(TextIter cursor) {
+    TextIter line_start = cursor;
+    line_start.set_line_offset(0);
+    TextIter line_end = cursor;
+    line_end.forward_to_line_end();
+    
+    string line_text = buffer.get_text(line_start, line_end, false).strip();
+    
+    // Vérifier si la ligne commence par des # (titre ATX)
+    if (line_text.has_prefix("#")) {
+        return true;
+    }
+    
+    // Vérifier si la ligne suivante contient des = ou - (titre Setext)
+    if (!line_end.forward_line()) {
+        return false; // Pas de ligne suivante
+    }
+    
+    TextIter next_line_end = line_end;
+    next_line_end.forward_to_line_end();
+    
+    string next_line_text = buffer.get_text(line_end, next_line_end, false).strip();
+    
+    // Titre Setext niveau 1 (====) ou niveau 2 (----)
+    if (next_line_text.length > 0) {
+        char first_char = next_line_text[0];
+        if (first_char == '=' || first_char == '-') {
+            // Vérifier que toute la ligne contient le même caractère
+            bool is_uniform = true;
+            for (int i = 1; i < next_line_text.length; i++) {
+                if (next_line_text[i] != first_char) {
+                    is_uniform = false;
+                    break;
+                }
+            }
+            return is_uniform;
+        }
+    }
+    
+    return false;
+}
+
+/** Méthode utilitaire pour indenter/désindenter des lignes avec gestion intelligente de la numérotation */
+private void indent_lines_with_smart_numbering(TextIter start, TextIter end, bool increase) {
+    var start_line = start.get_line();
+    var end_line = end.get_line();
+    
+    // Bloquer les signaux temporairement pour éviter les notifications multiples
+    buffer.begin_user_action();
+    
+    // Collecter les informations sur les listes numérotées avant modification
+    var numbered_lists = new Gee.ArrayList<NumberedListInfo?>();
+    
+    for (int line = start_line; line <= end_line; line++) {
+        Gtk.TextIter line_start;
+        buffer.get_iter_at_line(out line_start, line);
+        Gtk.TextIter line_end = line_start;
+        line_end.forward_to_line_end();
+        
+        string line_text = buffer.get_text(line_start, line_end, false);
+        var list_info = parse_numbered_list_line(line_text);
+        numbered_lists.add(list_info);
+    }
+    
+    // Appliquer l'indentation ligne par ligne
+    for (int line = start_line; line <= end_line; line++) {
+        Gtk.TextIter line_start;
+        buffer.get_iter_at_line(out line_start, line);
+        
+        if (increase) {
+            // Ajouter 4 espaces au début de la ligne
+            buffer.insert(ref line_start, "    ", -1);
+        } else {
+            // Supprimer jusqu'à 4 espaces ou tabulations au début de la ligne
+            Gtk.TextIter line_char = line_start;
+            int spaces_removed = 0;
+            
+            while (spaces_removed < 4 && !line_char.ends_line()) {
+                var ch = line_char.get_char();
+                if (ch == ' ') {
+                    var next = line_char;
+                    next.forward_char();
+                    buffer.delete(ref line_char, ref next);
+                    spaces_removed++;
+                } else if (ch == '\t') {
+                    var next = line_char;
+                    next.forward_char();
+                    buffer.delete(ref line_char, ref next);
+                    break; // Une tabulation remplace plusieurs espaces
+                } else {
+                    break; // Arrêter si on trouve autre chose qu'un espace ou tabulation
+                }
+            }
+        }
+    }
+    
+    // Renumériser les listes numérotées si nécessaire
+    if (increase) {
+        renumber_lists_after_indent(start_line, end_line, numbered_lists);
+    }
+    
+    buffer.end_user_action();
+}
+
+/** Structure pour stocker les informations d'une ligne de liste numérotée */
+private struct NumberedListInfo {
+    public bool is_numbered_list;
+    public int current_number;
+    public string prefix; // Les espaces/indentation avant le numéro
+    public string suffix; // Le texte après le numéro (généralement ". ")
+    public string content; // Le contenu après le marqueur
+}
+
+/** Parse une ligne pour extraire les informations de liste numérotée */
+private NumberedListInfo? parse_numbered_list_line(string line_text) {
+    // Regex pour détecter les listes numérotées : espaces optionnels + numéro + point + espace + contenu
+    MatchInfo match_info;
+    try {
+        var regex = new Regex("^(\\s*)(\\d+)(\\.\\s)(.*)$");
+        if (regex.match(line_text, 0, out match_info)) {
+            var info = NumberedListInfo();
+            info.is_numbered_list = true;
+            info.prefix = match_info.fetch(1);
+            info.current_number = int.parse(match_info.fetch(2));
+            info.suffix = ". ";
+            info.content = match_info.fetch(4);
+            return info;
+        }
+    } catch (RegexError e) {
+        warning("Erreur regex: %s", e.message);
+    }
+    
+    var info = NumberedListInfo();
+    info.is_numbered_list = false;
+    return info;
+}
+
+/** Renumérote les listes après indentation selon l'algorithme n°=present_n°.i++ */
+private void renumber_lists_after_indent(int start_line, int end_line, Gee.ArrayList<NumberedListInfo?> original_lists) {
+    for (int line = start_line; line <= end_line; line++) {
+        int list_index = line - start_line;
+        if (list_index >= original_lists.size) continue;
+        
+        var original_info = original_lists[list_index];
+        if (original_info == null || !original_info.is_numbered_list) continue;
+        
+        // Obtenir la ligne actuelle après indentation
+        Gtk.TextIter line_start;
+        buffer.get_iter_at_line(out line_start, line);
+        Gtk.TextIter line_end = line_start;
+        line_end.forward_to_line_end();
+        
+        string current_line = buffer.get_text(line_start, line_end, false);
+        var current_info = parse_numbered_list_line(current_line);
+        
+        if (current_info != null && current_info.is_numbered_list) {
+            // Calculer le nouveau numéro selon l'algorithme : n°=present_n°.i++
+            // Pour la première indentation, on garde i=1, puis i++
+            int sub_number = 1; // i commence à 1
+            string new_number = @"$(original_info.current_number).$(sub_number)";
+            
+            // Construire la nouvelle ligne
+            string new_line = current_info.prefix + new_number + current_info.suffix + current_info.content;
+            
+            // Remplacer la ligne
+            buffer.delete(ref line_start, ref line_end);
+            buffer.insert(ref line_start, new_line, -1);
         }
     }
 }

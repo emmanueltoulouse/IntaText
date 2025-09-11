@@ -30,7 +30,7 @@ private Gdk.Texture? custom_icon = null;
 public Application() {
     Object(
         application_id: "com.cabineteto.IntaText",
-        flags: ApplicationFlags.FLAGS_NONE
+        flags: ApplicationFlags.HANDLES_OPEN
         );
 
     // Définir le chemin de base des ressources
@@ -145,6 +145,36 @@ protected override void activate() {
                 controller.connect_explorer_signals();
                 return false; // Exécuter une seule fois
             });
+}
+
+protected override void open(File[] files, string hint) {
+    // D'abord, activer l'application normalement
+    activate();
+
+    // Puis ouvrir le premier fichier spécifié
+    if (files.length > 0) {
+        string file_path = files[0].get_path();
+        if (file_path != null && controller != null) {
+            // Utiliser un délai pour s'assurer que l'interface est complètement initialisée
+            Timeout.add(200, () => {
+                try {
+                    controller.handle_file_open_request(file_path);
+                } catch (Error e) {
+                    warning("Erreur lors de l'ouverture du fichier: %s", e.message);
+                }
+                return false; // Exécuter une seule fois
+            });
+        }
+    }
+}
+
+public override void shutdown() {
+    // Nettoyer les plugins avant la fermeture
+    if (model != null) {
+        model.cleanup();
+    }
+
+    base.shutdown();
 }
 
 public static int main(string[] args) {

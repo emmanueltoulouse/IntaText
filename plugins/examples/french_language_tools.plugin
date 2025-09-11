@@ -1,0 +1,19 @@
+[Plugin]
+Id=french_language_tools
+Name=Outils Français
+Version=1.2.0
+Author=Communauté IntaText
+Type=Language
+Description=Correction orthographique et grammaticale pour le français
+Enabled=true
+Dependencies=
+
+[LanguagePlugin]
+SupportedLanguages=fr,fr_FR,fr_CA
+ProvidedServices=SPELL_CHECK,GRAMMAR_CHECK,WORD_COUNT
+
+[Configuration]
+# Dictionnaire personnalisé
+PersonalDictionary=~/.config/intatext/french_personal.dic
+# Niveau de vérification grammaticale
+GrammarLevel=intermediate

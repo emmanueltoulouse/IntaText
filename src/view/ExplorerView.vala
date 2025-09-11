@@ -146,6 +146,8 @@ private ExtensionFilterChips? ext_filter_chips = null;
 private HashSet<string> selected_extensions = new HashSet<string>();
 private ConfigManager config_manager;
 private string current_path;
+private Button sort_button;
+private Popover? sort_popover = null;
 
 public ExplorerView(ExplorerModel? model_param) {
     Object(orientation: Gtk.Orientation.VERTICAL, spacing: 0);
@@ -185,6 +187,13 @@ public ExplorerView(ExplorerModel? model_param) {
 
     // Charger le contenu initial
     refresh_directory_content();
+
+    // Connecter au signal de changement de tri pour sauvegarder automatiquement
+    if (this.model != null) {
+        this.model.sort_type_changed.connect((sort_type) => {
+            config_manager.save(); // Sauvegarder les paramètres
+        });
+    }
 }
 
 private void create_toolbar() {
@@ -211,6 +220,11 @@ private void create_toolbar() {
     home_button.set_tooltip_text(_("Dossier personnel"));
     home_button.add_css_class("flat");
 
+    // Bouton tri
+    sort_button = new Button.from_icon_name("view-sort-descending-symbolic");
+    sort_button.set_tooltip_text(_("Options de tri"));
+    sort_button.add_css_class("flat");
+
     // Connecter les signaux
     up_button.clicked.connect(() => {
                 File parent = File.new_for_path(current_path).get_parent();
@@ -233,6 +247,14 @@ private void create_toolbar() {
                 if (model != null) model.navigate_to(home);
                 refresh_directory_content();
                 directory_changed(home);
+            });
+
+    // Configurer le bouton de tri
+    sort_button.clicked.connect(() => {
+                create_sort_popover();
+                if (sort_popover != null) {
+                    sort_popover.popup();
+                }
             });
 
     // Configurer le filtre par extensions
@@ -275,6 +297,7 @@ private void create_toolbar() {
     toolbar.append(up_button);
     toolbar.append(home_button);
     toolbar.append(refresh_button);
+    toolbar.append(sort_button);
     toolbar.append(ext_filter_button);
 
     // Dans la méthode create_toolbar(), ajoute le bouton :
@@ -459,6 +482,90 @@ private void create_file_list() {
     scroll.set_child(list_view);
 
     this.append(scroll);
+}
+
+/**
+ * Crée le popover de tri avec les options disponibles
+ */
+private void create_sort_popover() {
+    if (sort_popover != null) return; // Déjà créé
+    
+    // Créer le contenu du popover
+    var box = new Box(Orientation.VERTICAL, 6);
+    box.set_margin_start(12);
+    box.set_margin_end(12);
+    box.set_margin_top(12);
+    box.set_margin_bottom(12);
+    
+    // Titre
+    var title_label = new Label("Trier par");
+    title_label.add_css_class("heading");
+    box.append(title_label);
+    
+    // Créer les boutons radio
+    CheckButton? first_button = null;
+    
+    // Date décroissante (par défaut)
+    var date_desc_button = new CheckButton.with_label("Date (récent en premier)");
+    date_desc_button.set_active(model != null && model.current_sort_type == SortType.DATE_DESC);
+    first_button = date_desc_button;
+    box.append(date_desc_button);
+    
+    // Date croissante
+    var date_asc_button = new CheckButton.with_label("Date (ancien en premier)");
+    date_asc_button.set_group(date_desc_button);
+    date_asc_button.set_active(model != null && model.current_sort_type == SortType.DATE_ASC);
+    box.append(date_asc_button);
+    
+    // Alphabétique
+    var alpha_button = new CheckButton.with_label("Nom (alphabétique)");
+    alpha_button.set_group(date_desc_button);
+    alpha_button.set_active(model != null && model.current_sort_type == SortType.ALPHABETICAL);
+    box.append(alpha_button);
+    
+    // Extension
+    var ext_button = new CheckButton.with_label("Extension");
+    ext_button.set_group(date_desc_button);
+    ext_button.set_active(model != null && model.current_sort_type == SortType.EXTENSION);
+    box.append(ext_button);
+    
+    // Connecter les signaux
+    date_desc_button.toggled.connect(() => {
+        if (date_desc_button.get_active() && model != null) {
+            model.current_sort_type = SortType.DATE_DESC;
+            refresh_directory_content();
+            sort_popover.popdown();
+        }
+    });
+    
+    date_asc_button.toggled.connect(() => {
+        if (date_asc_button.get_active() && model != null) {
+            model.current_sort_type = SortType.DATE_ASC;
+            refresh_directory_content();
+            sort_popover.popdown();
+        }
+    });
+    
+    alpha_button.toggled.connect(() => {
+        if (alpha_button.get_active() && model != null) {
+            model.current_sort_type = SortType.ALPHABETICAL;
+            refresh_directory_content();
+            sort_popover.popdown();
+        }
+    });
+    
+    ext_button.toggled.connect(() => {
+        if (ext_button.get_active() && model != null) {
+            model.current_sort_type = SortType.EXTENSION;
+            refresh_directory_content();
+            sort_popover.popdown();
+        }
+    });
+    
+    // Créer le popover
+    sort_popover = new Popover();
+    sort_popover.set_parent(sort_button);
+    sort_popover.set_child(box);
 }
 
 private void refresh_directory_content() {

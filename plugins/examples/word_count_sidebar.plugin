@@ -1,0 +1,19 @@
+[Plugin]
+Id=word_count_sidebar
+Name=Compteur de Mots
+Version=1.0.0
+Author=Plugin Developer
+Type=UI
+Description=Panneau latéral affichant les statistiques du document
+Enabled=true
+Dependencies=
+
+[UIPlugin]
+ComponentTypes=SIDEBAR_PANEL,STATUS_WIDGET
+KeyboardShortcuts=<Ctrl><Alt>W
+
+[Configuration]
+# Position par défaut
+DefaultPosition=right
+# Affichage automatique
+AutoShow=true

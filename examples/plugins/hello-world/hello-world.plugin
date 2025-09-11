@@ -1,0 +1,29 @@
+[Plugin]
+Id=hello-world
+Name=Hello World Plugin
+Version=1.0.0
+Description=Plugin d'exemple qui démontre l'architecture des plugins d'IntaText
+Author=IntaText Team
+Website=https://github.com/intatext/intatext
+License=GPL-3.0+
+
+[Compatibility]
+MinIntaTextVersion=1.0.0
+MaxIntaTextVersion=2.0.0
+
+[Type]
+PluginType=UI
+
+[Dependencies]
+
+[Resources]
+LibraryFile=hello-world-plugin.so
+
+[Configuration]
+DefaultEnabled=false
+ConfigurableSettings=show_notifications,auto_greet
+
+[Permissions]
+RequiresFileAccess=false
+RequiresNetworkAccess=false
+RequiresSystemAccess=false

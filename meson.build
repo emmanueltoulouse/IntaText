@@ -10,6 +10,13 @@ adw_dep = dependency('libadwaita-1', version: '>=1.0', required: true)
 gee_dep = dependency('gee-0.8', required: true)
 json_dep = dependency('json-glib-1.0', required: true)
 gio_dep = dependency('gio-2.0', required: true)
+# Support pour le chargement dynamique de plugins
+dl_dep = dependency('dl', required: false)
+
+# Si libdl n'est pas trouvée comme dépendance, essayer de la chercher comme bibliothèque
+if not dl_dep.found()
+    dl_dep = meson.get_compiler('c').find_library('dl', required: false)
+endif
 
 # Import des modules GNOME
 gnome = import('gnome')
@@ -49,6 +56,16 @@ sources = [
     'src/model/ApplicationModel.vala',
     'src/model/ConfigManager.vala',
     'src/model/EditorModel.vala',
+
+    # Architecture de plugins
+    'src/model/plugins/IPlugin.vala',
+    'src/model/plugins/IFormatPlugin.vala',
+    'src/model/plugins/ILanguagePlugin.vala',
+    'src/model/plugins/IUIPlugin.vala',
+    'src/model/plugins/PluginManager.vala',
+    'src/model/plugins/PluginMetadataReader.vala',
+    'src/model/plugins/PluginService.vala',
+    'src/model/plugins/PluginConfigManager.vala',
 
     # Explorateur - Modèles
     'src/model/ExplorerModel.vala',
@@ -110,11 +127,30 @@ add_project_arguments(['--pkg=gtk4', '--pkg=libadwaita-1', '--pkg=gee-0.8', '--p
 # Dans votre fichier meson.build principal
 add_project_arguments(['--disable-warnings'], language: 'vala')
 
+# Définir les dépendances selon la disponibilité de libdl
+deps = [gtk_dep, adw_dep, gee_dep, json_dep, gio_dep]
+if dl_dep.found()
+    deps += dl_dep
+    add_project_arguments(['--pkg=posix'], language: 'vala')
+endif
+
 executable('IntaText',
   sources: sources + resources,
-  dependencies: [gtk_dep, adw_dep, gee_dep, json_dep, gio_dep],
+  dependencies: deps,
   install: true,
   vala_args: ['--Xcc=-lm']
+)
+
+# Installation des répertoires pour les plugins
+install_emptydir(join_paths(get_option('libdir'), 'intatext', 'plugins'))
+install_emptydir(join_paths(get_option('datadir'), 'intatext', 'plugins'))
+
+# Installation des exemples de plugins
+install_data(
+    'plugins/examples/markdown_extended.plugin',
+    'plugins/examples/french_language_tools.plugin',
+    'plugins/examples/word_count_sidebar.plugin',
+    install_dir: join_paths(get_option('datadir'), 'intatext', 'plugins', 'examples')
 )
 
 # Installation de l'icône

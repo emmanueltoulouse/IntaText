@@ -266,6 +266,39 @@ private void setup_actions() {
             });
     this.add_action(open_file_action);
     application.set_accels_for_action("win.open-file", {"<Control>o"});
+
+    // Actions pour undo/redo
+    var undo_action = new SimpleAction("undo", null);
+    undo_action.activate.connect(() => {
+        perform_undo();
+    });
+    this.add_action(undo_action);
+    application.set_accels_for_action("win.undo", {"<Control>z"});
+
+    var redo_action = new SimpleAction("redo", null);
+    redo_action.activate.connect(() => {
+        perform_redo();
+    });
+    this.add_action(redo_action);
+    application.set_accels_for_action("win.redo", {"<Control><Shift>z", "<Control>y"});
+}
+
+private void perform_undo() {
+    int current_page = editor_notebook.get_current_page();
+    if (current_page >= 0 && current_page < editor_tabs.size) {
+        var editor = editor_tabs[current_page];
+        editor.perform_undo();
+        update_status_bar();
+    }
+}
+
+private void perform_redo() {
+    int current_page = editor_notebook.get_current_page();
+    if (current_page >= 0 && current_page < editor_tabs.size) {
+        var editor = editor_tabs[current_page];
+        editor.perform_redo();
+        update_status_bar();
+    }
 }
 
 private GLib.MenuModel build_app_menu() {
