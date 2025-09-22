@@ -1,0 +1,4 @@
+option('build-tests', type: 'boolean', value: false, description: 'Build unit and integration tests')
+
+option('suppress_warnings', type: 'boolean', value: false,
+	description: 'Supprime une partie des warnings C bruyants (-Wunused-parameter, -Wcast-function-type, etc.)')

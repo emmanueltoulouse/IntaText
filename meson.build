@@ -5,8 +5,6 @@ project('IntaText', 'vala', version: '0.1.0',
       'debug=true'
     ])
 
-# Option pour réduire le bruit des warnings C (désactivé par défaut pour ne pas masquer les réels problèmes)
-option('suppress_warnings', type: 'boolean', value: false, description: 'Supprime une partie des warnings C bruyants (-Wunused-parameter, -Wcast-function-type, etc.)')
 
 gtk_dep = dependency('gtk4', version: '>=4.1', required: true)
 adw_dep = dependency('libadwaita-1', version: '>=1.0', required: true)
