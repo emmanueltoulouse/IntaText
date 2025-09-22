@@ -1302,47 +1302,17 @@ private bool is_markdown_hr(string s) {
 public void insert_horizontal_rule() {
     ensure_tags();
 
-    // Obtenir la position actuelle du curseur
-    TextIter iter;
-    buffer.get_iter_at_mark(out iter, buffer.get_insert());
-
-    // S'assurer qu'on est au début d'une ligne
-    if (!iter.starts_line()) {
-        buffer.insert(ref iter, "\n", -1);
-    }
-
-    // Pas de marque : insertion directe avec tags
-
-    // Calculer la largeur optimale
-    int rule_length = calculate_rule_length();
-    // Normalisation: éviter petites fluctuations (ex: 111 vs 114) dues aux marges/scrollbars.
-    // On arrondit au multiple de 3 le plus proche et on borne entre 30 et 180.
-    if (rule_length < 30) rule_length = 30;
-    if (rule_length > 180) rule_length = 180;
-    int rem = rule_length % 3;
-    if (rem == 1) rule_length -= 1; else if (rem == 2) rule_length += 1;
-
-    // Créer un trait continu et élégant avec des caractères Unicode
-    StringBuilder rule_builder = new StringBuilder();
-    for (int i = 0; i < rule_length; i++) {
-        rule_builder.append_unichar('─');
-    }
-    string rule_line = rule_builder.str;
-
-    // Insérer la ligne du trait avec son tag glyphes
+    // Insérer la ligne du trait avec son tag glyphes (aucune ligne vide ajoutée après)
     buffer.insert_with_tags(ref iter, rule_line, -1, tag_rule);
-    // Ajouter le saut de ligne après (non taggé)
-    buffer.insert(ref iter, "\n", -1);
-    // Retrouver la ligne que l'on vient d'insérer pour appliquer le tag neutre de ligne
-    TextIter line_full_start = iter; line_full_start.backward_line(); line_full_start.set_line_offset(0);
+
+    // Appliquer le tag neutre sur toute la ligne (curseur en fin de ligne courante)
+    TextIter line_full_start = iter; line_full_start.set_line_offset(0);
     TextIter line_full_end = line_full_start; line_full_end.forward_to_line_end();
     buffer.apply_tag(tag_rule_line, line_full_start, line_full_end);
 
-    // Nettoyage minimal : aucune ligne vide supplémentaire inutile
-    // (suppression de la logique précédente d'insertion conditionnelle)
-    // Sécurité: retirer tags résiduels sur la ligne suivante si déjà existants
-    TextIter cleanup_start = iter; cleanup_start.forward_line();
-    TextIter cleanup_end = cleanup_start; cleanup_end.forward_to_line_end();
+    // Positionner le curseur explicitement à la fin de la ligne du trait
+    buffer.place_cursor(iter);
+    // Fin insertion trait sans saut de ligne supplémentaire
     buffer.remove_tag(tag_rule, cleanup_start, cleanup_end);
     buffer.remove_tag(tag_rule_line, cleanup_start, cleanup_end);
 
