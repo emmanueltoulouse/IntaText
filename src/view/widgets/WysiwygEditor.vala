@@ -1305,14 +1305,44 @@ public void insert_horizontal_rule() {
     }
     string rule_line = rule_builder.str;
 
-    buffer.insert(ref iter, rule_line + "\n\n", -1);
+    // Insérer exactement la ligne du trait + saut de ligne unique ; on gèrera une ligne vide après
+    buffer.insert(ref iter, rule_line + "\n", -1);
 
-    // Appliquer le tag de règle
+    // Délimiter la zone du trait
     TextIter start;
     buffer.get_iter_at_mark(out start, rule_start);
     TextIter end = start;
     end.forward_chars(rule_line.length);
     buffer.apply_tag(tag_rule, start, end);
+
+    // S'assurer que la ligne suivante n'hérite d'aucun attribut visuel du trait.
+    // Certaines implémentations de TextView peuvent réutiliser les attributs côté rendu si la
+    // ligne est vide; on force donc une ligne vide neutre.
+    TextIter after_rule = end;
+    if (!after_rule.ends_line()) {
+        after_rule.forward_to_line_end();
+    }
+    // Insérer une ligne vide si elle n'existe pas déjà
+    TextIter check = after_rule;
+    bool need_blank = true;
+    if (check.forward_line()) {
+        // Si la prochaine ligne est déjà vide, pas besoin de dupliquer
+        TextIter ls = check; ls.set_line_offset(0);
+        TextIter le = ls; le.forward_to_line_end();
+        string next_line = buffer.get_text(ls, le, false);
+        if (next_line.strip().length == 0) {
+            need_blank = false;
+        }
+    }
+    if (need_blank) {
+        // Revenir au point après le trait et insérer une nouvelle ligne vide
+        TextIter insert_pt = end; insert_pt.forward_to_line_end();
+        buffer.insert(ref insert_pt, "\n", -1);
+    }
+    // Optionnel: retirer explicitement tag_rule de ce qui suit, par sécurité
+    TextIter cleanup_start = end; cleanup_start.forward_line();
+    TextIter cleanup_end = cleanup_start; cleanup_end.forward_to_line_end();
+    buffer.remove_tag(tag_rule, cleanup_start, cleanup_end);
 
     buffer.delete_mark(rule_start);
 }
