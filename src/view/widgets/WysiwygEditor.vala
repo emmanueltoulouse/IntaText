@@ -16,7 +16,8 @@ public class WysiwygEditor : Gtk.TextView {
     // Largeur minimale souhaitée pour le contenu de l'éditeur.
     // Valeur initiale; sera surchargée par GSettings (editor-min-content-width)
     private int min_content_width = 800;
-private Gtk.TextBuffer buffer;
+// Masque intentionnellement Gtk.TextView.buffer
+private new Gtk.TextBuffer buffer;
 private PivotDocument? pivot_doc;
 
 // Mode d'indentation actuel
@@ -753,8 +754,7 @@ public void insert_list(bool ordered) {
     TextIter iter;
     buffer.get_iter_at_mark(out iter, buffer.get_insert());
 
-    // Insérer à l'emplacement actuel
-    TextIter start = iter;
+    // (variable locale 'start' supprimée car non utilisée)
 
     // Insérer un marqueur pour le début de la liste
     TextMark list_start = buffer.create_mark(null, iter, true);
@@ -1278,12 +1278,7 @@ private bool is_markdown_hr(string s) {
     }
 }
 
-// Détecte si une ligne est un trait Unicode (suite de '─')
-private bool is_unicode_rule_line(string s) {
-    if (s == null || s.length < 3) return false;
-    string t = s.replace("─", "").strip();
-    return t.length == 0;
-}
+// (Supprimé) ancienne fonction is_unicode_rule_line non utilisée
 
 public void insert_horizontal_rule() {
     ensure_tags();
@@ -1685,12 +1680,7 @@ private Gee.List<TextSegment> extract_segments_from_cell_buffer(Gtk.TextBuffer c
     segments.add(segment);
     return segments;
 }
-// Méthode d'aide pour insérer du texte de manière sécurisée à la fin du buffer
-private void safe_insert_at_end(string text) {
-    TextIter end_iter;
-    buffer.get_end_iter(out end_iter);
-    buffer.insert(ref end_iter, text, -1);
-}
+// (Supprimé) safe_insert_at_end non utilisée
 
 public void load_pivot_document(PivotDocument doc) {
     this.pivot_doc = doc;
@@ -2496,6 +2486,8 @@ public PivotDocument get_pivot_document() {
 }
 
 // Extrait des segments inline en se basant sur les tags appliqués dans la ligne courante
+// TODO (cleanup): extract_inline_segments_from_text et fonctions associées peuvent être supprimées si la nouvelle
+// pipeline de rendu confirme leur inutilité. Conservées temporairement pour référence.
 private Gee.List<TextSegment> extract_inline_segments_from_text(string plain, TextIter line_start, TextIter line_end) {
     var out = new Gee.ArrayList<TextSegment>();
     if (plain == null || plain.length == 0) return out;
@@ -2584,6 +2576,7 @@ private Gee.List<TextSegment> extract_inline_segments_from_text(string plain, Te
 /**
   * Trouve les limites d'un paragraphe dans le buffer - Méthode améliorée
   */
+// TODO (cleanup): find_paragraph_bounds conservée pour future recherche paragraphe.
 private bool find_paragraph_bounds(string para_text, out TextIter start, out TextIter end) {
     buffer.get_start_iter(out start);
     buffer.get_end_iter(out end);
@@ -2851,6 +2844,7 @@ private void clean_list_prefix_from_segments(Gee.List<TextSegment> segments, boo
 /**
   * Analyse et applique le formatage inline dans un paragraphe
   */
+// TODO (cleanup): ancienne implémentation apply_inline_formatting (supprimable)
 private void apply_inline_formatting(TextIter start_iter, int length, string text) {
     // Formatage gras - recherche des séquences **texte**
     int pos = 0;
@@ -3585,6 +3579,7 @@ private NumberedListInfo? parse_numbered_list_line(string line_text) {
 }
 
 /** Renumérote les listes après indentation selon l'algorithme n°=present_n°.i++ */
+// TODO (cleanup): renumber_lists_after_indent non utilisée encore (peut être retirée)
 private void renumber_lists_after_indent(int start_line, int end_line, Gee.ArrayList<NumberedListInfo?> original_lists) {
     for (int line = start_line; line <= end_line; line++) {
         int list_index = line - start_line;
