@@ -124,11 +124,15 @@ private void setup_ui() {
     status_label = new Gtk.Label("");
     status_label.set_xalign(0.0f);
     status_label.set_hexpand(true); // pousse le label du curseur à droite
+    status_label.set_ellipsize(Pango.EllipsizeMode.END);
+    status_label.set_width_chars(50);
     status_bar.append(status_label);
     // Label curseur à droite "Lig :xxxx  Col:xxx"
     cursor_label = new Gtk.Label("");
     cursor_label.set_xalign(1.0f);
     cursor_label.set_hexpand(false);
+    cursor_label.set_ellipsize(Pango.EllipsizeMode.END);
+    cursor_label.set_width_chars(18);
     status_bar.append(cursor_label);
     // Charger préférence
     var cfg = controller.get_config_manager();
@@ -408,6 +412,15 @@ public void open_document_in_tab(IntaText.Document.PivotDocument doc, string fil
 private Box create_tab_box(string title, EditorView editor) {
     var tab_box = new Box(Orientation.HORIZONTAL, 6);
     var label = new Label(title);
+    // Limiter l'impact des très longs noms de fichiers sur la phase de mesure.
+    // Sans ellipsize GTK tente plusieurs largeurs intermédiaires (< largeur minimale calculée)
+    // ce qui déclenche des warnings "Trying to measure GtkLabel ... needs at least X".
+    label.set_ellipsize(Pango.EllipsizeMode.END);
+    // Largeur indicative maximale souhaitée (en caractères) avant ellipsize.
+    label.set_width_chars(28);
+    // Autoriser l'expansion horizontale pour que le notebook distribue mieux l'espace.
+    label.set_hexpand(true);
+    label.set_xalign(0.0f);
     label.add_css_class("tab-label-black");
     var close_button = new Button.from_icon_name("window-close-symbolic");
     close_button.add_css_class("flat");

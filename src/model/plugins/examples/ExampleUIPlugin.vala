@@ -134,6 +134,7 @@ namespace IntaText.Plugins.Examples {
 
                 case "example_status_widget":
                     var label = new Gtk.Label ("Plugin OK");
+                    label.set_ellipsize (Pango.EllipsizeMode.END);
                     label.set_tooltip_text ("Statut du plugin d'exemple");
                     return label;
 
