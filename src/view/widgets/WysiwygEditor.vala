@@ -1,10 +1,26 @@
 using Gtk;
 using IntaText.Document;
+using Graphene;
 
 namespace IntaText {
+
+/** Enum pour les modes d'indentation */
+public enum IndentationMode {
+    NONE,           // Pas d'indentation
+    SPACES,         // Espaces classiques (problème de wrapping)
+    MARGIN_TAGS,    // TextTags avec left-margin (solution actuelle)
+    RTF_FORMAT      // Format enrichi (RTF/ODT)
+}
+
 public class WysiwygEditor : Gtk.TextView {
+    // Largeur minimale souhaitée pour le contenu de l'éditeur.
+    // Valeur initiale; sera surchargée par GSettings (editor-min-content-width)
+    private int min_content_width = 800;
 private Gtk.TextBuffer buffer;
 private PivotDocument? pivot_doc;
+
+// Mode d'indentation actuel
+private IndentationMode current_indentation_mode = IndentationMode.MARGIN_TAGS;
 
 private Gtk.TextTag tag_bold;
 private Gtk.TextTag tag_italic;
@@ -23,6 +39,9 @@ private Gtk.TextTag tag_table_header;
 private Gtk.TextTag tag_table_cell;
 private Gtk.TextTag tag_table_border;
 
+// Variable pour mémoriser la dernière largeur calculée pour les traits
+private int last_calculated_rule_length = 0;
+
 private Gtk.CssProvider css_provider;
 // Registre local des noms de tags dynamiques créés (pour retrouver href/src/alt)
 private Gee.ArrayList<string> link_tag_names = new Gee.ArrayList<string>();
@@ -37,6 +56,8 @@ private string? current_font_family = null;
 private int current_font_size = 0;
 private bool has_pending_attributes = false;
 
+// (Code debug supprimé) : plus d'overlay, de toggling wrap ou de contenu artificiel.
+
 public signal void document_changed(PivotDocument doc);
 public signal void buffer_changed();
 
@@ -44,14 +65,41 @@ public WysiwygEditor() {
     Object();
 
     // Zone d'édition simple
+    // Désactiver le wrapping pour permettre le défilement horizontal
+    // Restaure le wrapping pour éviter l’ascenseur horizontal quand le texte peut se replier
     this.set_wrap_mode(Gtk.WrapMode.WORD_CHAR);
+    // Aide le ScrolledWindow à décider quand afficher les barres de défilement
+    // En politique MINIMUM, le calcul se base sur la taille minimale déclarée
+    // (utile avec un width minimal configuré via GSettings)
+    this.set_hscroll_policy(Gtk.ScrollablePolicy.MINIMUM);
+    this.set_vscroll_policy(Gtk.ScrollablePolicy.MINIMUM);
+    // Charger la préférence GSettings pour la largeur minimale de contenu
+    var ui_settings = new GLib.Settings("com.cabineteto.IntaText");
+    this.min_content_width = ui_settings.get_int("editor-min-content-width");
+    this.set_size_request(this.min_content_width, -1);
+    // Écouter les changements de préférence et appliquer en direct
+    ui_settings.changed["editor-min-content-width"].connect((key) => {
+        var new_width = ui_settings.get_int(key);
+        if (new_width < 200) new_width = 200; // garde-fou basique
+        this.min_content_width = new_width;
+        this.set_size_request(this.min_content_width, -1);
+        // rafraîchir la longueur des règles pour prendre en compte le nouveau layout
+        this.refresh_horizontal_rules();
+    });
     this.set_monospace(false);
     this.set_vexpand(true);
     this.set_hexpand(true);
     buffer = this.get_buffer();
 
+    // Configuration d'accessibilité
+    this.set_accessible_role(Gtk.AccessibleRole.TEXT_BOX);
+    this.update_property(Gtk.AccessibleProperty.LABEL, "Zone d'édition WYSIWYG");
+    this.update_property(Gtk.AccessibleProperty.DESCRIPTION, "Zone de texte principale pour l'édition WYSIWYG");
+    this.update_state(Gtk.AccessibleState.BUSY, false);
+
     // Forcer le fond blanc
-    this.set_css_classes({"wysiwyg-editor-textview"});
+    // Applique une classe CSS dédiée au TextView (GTK4: préférer add_css_class)
+    this.add_css_class("wysiwyg-editor-textview");
     // Commenté temporairement pour éviter les erreurs
     // var css = new Gtk.CssProvider();
     // css.load_from_string(".wysiwyg-editor-textview { background-color: #fff; }");
@@ -69,14 +117,103 @@ public WysiwygEditor() {
 
     // Gestionnaire pour redimensionnement de la fenêtre (mise à jour des traits)
     this.notify["allocated-width"].connect(this.on_size_changed);
+    this.notify["allocated-height"].connect(this.on_size_changed);
+
+    // Gestionnaire pour mise à jour lors du changement de l'état de la fenêtre
+    this.notify["visible"].connect(() => {
+        if (this.get_visible()) {
+            Idle.add(() => {
+                on_size_changed();
+                return false;
+            });
+        }
+    });
 
     // Gestionnaires pour les interactions avec les liens
     setup_link_interactions();
+
+    // Initialiser les préférences d'indentation
+    setup_indentation_preferences();
 
     // Commenté temporairement
     // buffer.changed.connect(() => {
     //     buffer_changed();
     // });
+    
+    // Code debug retiré.
+}
+
+// Override measure: impose une largeur minimale = min_content_width pour
+// que le ScrolledWindow perçoive un contenu plus large que la zone visible.
+public override void measure(Gtk.Orientation orientation, int for_size,
+                             out int minimum, out int natural,
+                             out int minimum_baseline, out int natural_baseline) {
+    base.measure(orientation, for_size, out minimum, out natural, out minimum_baseline, out natural_baseline);
+    if (orientation == Gtk.Orientation.HORIZONTAL) {
+        // Forcer le minimum à min_content_width pour déclencher l’ascenseur quand alloc < min
+        if (minimum < min_content_width) minimum = min_content_width;
+        if (natural < minimum) natural = minimum;
+        // Supprimer tout baseline horizontal (non valide pour cette orientation) pour éviter le warning GTK
+        minimum_baseline = -1;
+        natural_baseline = -1;
+    }
+}
+
+// Code debug supprimé: suppression des toggles wrap et size_allocate custom.
+
+/**
+ * Définit le mode d'indentation à utiliser
+ */
+public void set_indentation_mode(IndentationMode mode) {
+    if (current_indentation_mode != mode) {
+        convert_indentation_from_to(current_indentation_mode, mode);
+        current_indentation_mode = mode;
+    }
+}
+
+/**
+ * Obtient le mode d'indentation actuel
+ */
+public IndentationMode get_indentation_mode() {
+    return current_indentation_mode;
+}
+
+/**
+ * Configure les préférences d'indentation
+ */
+private void setup_indentation_preferences() {
+    try {
+        var settings = new GLib.Settings("com.cabineteto.IntaText");
+
+        // Charger le mode initial
+        string mode_str = settings.get_string("indentation-mode");
+        var mode = string_to_indentation_mode(mode_str);
+        set_indentation_mode(mode);
+
+        // Écouter les changements
+        settings.changed["indentation-mode"].connect((key) => {
+            string new_mode_str = settings.get_string(key);
+            var new_mode = string_to_indentation_mode(new_mode_str);
+            set_indentation_mode(new_mode);
+        });
+
+    } catch (Error e) {
+        // En cas d'erreur, utiliser le mode par défaut
+        set_indentation_mode(IndentationMode.MARGIN_TAGS);
+    }
+}
+
+/**
+ * Convertit une chaîne en mode d'indentation
+ */
+private IndentationMode string_to_indentation_mode(string mode_str) {
+    switch (mode_str) {
+        case "none": return IndentationMode.NONE;
+        case "spaces": return IndentationMode.SPACES;
+        case "margin-tags": return IndentationMode.MARGIN_TAGS;
+        case "rtf-format": return IndentationMode.RTF_FORMAT;
+        default: return IndentationMode.MARGIN_TAGS;
+    }
 }
 
 // Assure que tous les TextTags nécessaires existent et met à jour les champs
@@ -170,21 +307,21 @@ private void ensure_tags() {
  */
 private void create_indentation_tags() {
     var table = buffer.get_tag_table();
-    
+
     // Créer jusqu'à 10 niveaux d'indentation (devrait être suffisant)
     for (int level = 1; level <= 10; level++) {
         string tag_name = "indent-level-%d".printf(level);
         var existing_tag = table.lookup(tag_name);
-        
+
         if (existing_tag == null) {
             int margin = level * 20; // 20 pixels par niveau d'indentation
             buffer.create_tag(tag_name, "left-margin", margin);
         }
     }
-    
+
     // Ajouter les tags de table manquants
     var table_tag_table = buffer.get_tag_table();
-    
+
     // Table border (bordures de tableau)
     tag_table_border = (Gtk.TextTag) table_tag_table.lookup("table_border");
     if (tag_table_border == null) {
@@ -219,7 +356,7 @@ private void on_mouse_motion(double x, double y) {
     TextIter iter;
     if (this.get_iter_at_location(out iter, buffer_x, buffer_y)) {
         bool is_on_link = false;
-        
+
         // Vérifier si on est sur un lien (tag_link générique)
         if (iter.has_tag(tag_link)) {
             is_on_link = true;
@@ -233,7 +370,7 @@ private void on_mouse_motion(double x, double y) {
                 }
             }
         }
-        
+
         if (is_on_link) {
             // Changer le curseur en main
             this.set_cursor_from_name("pointer");
@@ -252,7 +389,7 @@ private void on_mouse_click(Gtk.GestureClick gesture, int n_press, double x, dou
     // Vérifier si c'est un Ctrl+Click
     var event = gesture.get_last_event(gesture.get_last_updated_sequence());
     if (event == null) return;
-    
+
     var modifiers = event.get_modifier_state();
     // Utiliser une comparaison directe avec la valeur du masque
     if ((modifiers & (int)Gdk.ModifierType.CONTROL_MASK) == 0) {
@@ -280,7 +417,7 @@ private void on_mouse_click(Gtk.GestureClick gesture, int n_press, double x, dou
 private string? get_link_url_at_iter(TextIter iter) {
     // D'abord, chercher dans les tags dynamiques pour trouver l'URL stockée
     // Les URLs sont stockées dans des tags avec le format "link::u:encoded_url"
-    
+
     var tags = iter.get_tags();
     foreach (var tag in tags) {
         string tag_name = tag.name;
@@ -292,11 +429,11 @@ private string? get_link_url_at_iter(TextIter iter) {
             return decoded_url;
         }
     }
-    
+
     // Fallback: extraire le texte visible du lien et voir si c'est une URL
     TextIter link_start = iter;
     TextIter link_end = iter;
-    
+
     // Aller au début du lien
     while (link_start.backward_char() && link_start.has_tag(tag_link)) {
         // Continue
@@ -304,28 +441,28 @@ private string? get_link_url_at_iter(TextIter iter) {
     if (!link_start.has_tag(tag_link)) {
         link_start.forward_char();
     }
-    
+
     // Aller à la fin du lien
     while (link_end.forward_char() && link_end.has_tag(tag_link)) {
         // Continue
     }
-    
+
     // Extraire le texte du lien
     string link_text = buffer.get_text(link_start, link_end, false);
     print("Texte du lien extrait: %s\n", link_text);
-    
+
     // Si le texte visible est une URL valide, l'utiliser
     if (is_valid_url(link_text)) {
         return link_text;
     }
-    
+
     print("Aucune URL valide trouvée pour le lien\n");
     return null;
 }
 
 // Vérifie si une chaîne est une URL valide
 private bool is_valid_url(string text) {
-    return text.has_prefix("http://") || text.has_prefix("https://") || 
+    return text.has_prefix("http://") || text.has_prefix("https://") ||
            text.has_prefix("ftp://") || text.has_prefix("mailto:");
 }
 
@@ -783,28 +920,28 @@ public void insert_image(string path, string alt_text) {
     try {
         // Créer un anchor pour insérer le widget image
         var anchor = buffer.create_child_anchor(iter);
-        
+
         // Créer un conteneur pour contrôler la taille de l'image
         var image_container = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 0);
         image_container.set_halign(Gtk.Align.START);
-        
+
         // Créer un widget image
         var image_widget = new Gtk.Image();
-        
+
         // Charger l'image avec gestion d'erreur
         if (GLib.FileUtils.test(path, GLib.FileTest.EXISTS)) {
             // Charger l'image originale pour obtenir ses dimensions
             var original_pixbuf = new Gdk.Pixbuf.from_file(path);
             var orig_width = original_pixbuf.get_width();
             var orig_height = original_pixbuf.get_height();
-            
+
             int target_width, target_height;
-            
+
             // Définir les limites de taille d'affichage dans l'éditeur
             int max_display_width = 600;   // Largeur max dans l'éditeur
             int max_display_height = 400;  // Hauteur max dans l'éditeur
             int min_display_size = 80;     // Taille minimum pour les très petites images
-            
+
             // Cas 1: Image très petite (moins de 80px dans toute dimension)
             if (orig_width < min_display_size || orig_height < min_display_size) {
                 // Agrandir en gardant les proportions jusqu'à atteindre min_display_size
@@ -827,27 +964,27 @@ public void insert_image(string path, string alt_text) {
                 double display_scale = 0.8; // Afficher à 80% de la taille originale pour un meilleur rendu
                 target_width = (int)(orig_width * display_scale);
                 target_height = (int)(orig_height * display_scale);
-                
+
                 // S'assurer qu'on ne descend pas en dessous du minimum
                 if (target_width < min_display_size || target_height < min_display_size) {
                     target_width = orig_width;
                     target_height = orig_height;
                 }
             }
-            
+
             // Redimensionner l'image
             var pixbuf = new Gdk.Pixbuf.from_file_at_scale(path, target_width, target_height, false);
             var texture = Gdk.Texture.for_pixbuf(pixbuf);
             image_widget.set_from_paintable(texture);
-            
+
             // Forcer explicitement la taille du widget
             image_widget.set_size_request(target_width, target_height);
             image_container.set_size_request(target_width, target_height);
-            
+
             // Debug : afficher les tailles calculées
-            print("Image: %s - Original: %dx%d → Target: %dx%d\n", 
+            print("Image: %s - Original: %dx%d → Target: %dx%d\n",
                   GLib.Path.get_basename(path), orig_width, orig_height, target_width, target_height);
-            
+
             image_widget.set_tooltip_text(alt_text ?? "");
         } else {
             // Image non trouvée, afficher un placeholder plus grand
@@ -855,35 +992,35 @@ public void insert_image(string path, string alt_text) {
             image_widget.set_pixel_size(64); // Taille plus grande en pixels
             image_widget.set_tooltip_text("Image introuvable: " + path);
         }
-        
+
         // Ajouter l'image au conteneur
         image_container.append(image_widget);
-        
+
         // Ajouter le conteneur à l'éditeur
         this.add_child_at_anchor(image_container, anchor);
-        
+
         // Stocker les métadonnées de l'image dans des tags pour la conversion
         TextIter anchor_iter;
         buffer.get_iter_at_child_anchor(out anchor_iter, anchor);
-        
+
         string enc_src = GLib.Uri.escape_string(path, null, false);
         Gtk.TextTag src_tag = buffer.create_tag("image-src::u:" + enc_src);
         buffer.apply_tag_by_name("image-src::u:" + enc_src, anchor_iter, anchor_iter);
-        string src_name = "image-src::u:" + enc_src; 
+        string src_name = "image-src::u:" + enc_src;
         if (!image_src_tag_names.contains(src_name)) image_src_tag_names.add(src_name);
-        
+
         string enc_alt = GLib.Uri.escape_string(alt_text ?? "", null, false);
         Gtk.TextTag alt_tag = buffer.create_tag("image-alt::u:" + enc_alt);
         buffer.apply_tag_by_name("image-alt::u:" + enc_alt, anchor_iter, anchor_iter);
-        string alt_name = "image-alt::u:" + enc_alt; 
+        string alt_name = "image-alt::u:" + enc_alt;
         if (!image_alt_tag_names.contains(alt_name)) image_alt_tag_names.add(alt_name);
-        
+
     } catch (Error e) {
         // En cas d'erreur, insérer un placeholder textuel
         warning("Erreur lors du chargement de l'image %s: %s", path, e.message);
         string placeholder = alt_text != null && alt_text.strip() != "" ? alt_text : GLib.Path.get_basename(path);
         if (placeholder == null || placeholder == "") placeholder = "[Image non trouvée]";
-        
+
         TextMark img_start = buffer.create_mark(null, iter, true);
         buffer.insert(ref iter, placeholder, -1);
         TextIter start;
@@ -959,26 +1096,87 @@ private void on_size_changed() {
     update_existing_horizontal_rules();
 }
 
+/**
+ * Force la mise à jour de tous les traits horizontaux.
+ * Utile après le chargement d'un document ou un changement de configuration.
+ */
+public void refresh_horizontal_rules() {
+    last_calculated_rule_length = 0; // Force la recalculation
+    update_existing_horizontal_rules();
+}
+
 // Met à jour tous les traits horizontaux existants avec la nouvelle largeur
 private void update_existing_horizontal_rules() {
+    // S'assurer que les tags sont créés
+    ensure_tags();
+
     // Calculer la nouvelle longueur
     int new_length = calculate_rule_length();
 
-    // Créer le nouveau texte du trait
+    // Si la longueur n'a pas changé d'au moins 1 caractère, ne pas mettre à jour
+    if (last_calculated_rule_length > 0 && (new_length - last_calculated_rule_length).abs() < 1) {
+        return;
+    }
+
+    last_calculated_rule_length = new_length;
+
+    // Créer le texte du trait cible
     var rule_text = new StringBuilder();
     for (int i = 0; i < new_length; i++) {
         rule_text.append_unichar('─');
     }
+
+    // 1) Premier passage: convertir les règles Markdown (---, ***, ___) en traits Unicode tagués
+    int total_lines = buffer.get_line_count();
+    buffer.begin_user_action();
+    for (int li = 0; li < total_lines; li++) {
+        Gtk.TextIter line_start;
+        buffer.get_iter_at_line(out line_start, li);
+        Gtk.TextIter line_end = line_start;
+        line_end.forward_to_line_end();
+        string raw_line = buffer.get_text(line_start, line_end, false);
+        string stripped = raw_line.strip();
+        if (is_markdown_hr(stripped)) {
+            // Remplacer le contenu de la ligne par le trait calculé et appliquer le tag
+            Gtk.TextIter s = line_start;
+            Gtk.TextIter e = line_end;
+            buffer.delete(ref s, ref e);
+            // Réinsérer à la position de début de ligne
+            buffer.insert_with_tags(ref s, rule_text.str, -1, tag_rule);
+        }
+    }
+    buffer.end_user_action();
 
     // Parcourir tout le buffer pour trouver les traits existants
     Gtk.TextIter start_iter, end_iter;
     buffer.get_start_iter(out start_iter);
     buffer.get_end_iter(out end_iter);
 
+    // Variable pour éviter les boucles infinies
+    int iterations = 0;
+    const int MAX_ITERATIONS = 1000;
+
     Gtk.TextIter match_start, match_end;
-    while (start_iter.forward_search("─", Gtk.TextSearchFlags.TEXT_ONLY, out match_start, out match_end, end_iter)) {
-        // Vérifier si ce trait a le tag_rule
-        if (match_start.has_tag(tag_rule)) {
+    while (start_iter.forward_search("─", Gtk.TextSearchFlags.TEXT_ONLY, out match_start, out match_end, end_iter)
+           && iterations < MAX_ITERATIONS) {
+
+        iterations++;
+
+        // Vérifier si ce trait a le tag_rule OU s'il s'agit d'une ligne complète de traits
+        bool is_rule_tagged = match_start.has_tag(tag_rule);
+
+        // Vérifier aussi si c'est une ligne qui ne contient que des caractères de trait
+        Gtk.TextIter line_start = match_start;
+        line_start.set_line_offset(0);
+        Gtk.TextIter line_end = match_start;
+        if (!line_end.ends_line()) {
+            line_end.forward_to_line_end();
+        }
+
+        string line_text = buffer.get_text(line_start, line_end, false).strip();
+        bool is_rule_line = line_text.length > 10 && line_text.replace("─", "").strip().length == 0;
+
+        if (is_rule_tagged || is_rule_line) {
             // Trouver le début et la fin complète du trait
             Gtk.TextIter rule_start = match_start;
             Gtk.TextIter rule_end = match_end;
@@ -999,9 +1197,18 @@ private void update_existing_horizontal_rules() {
                 rule_end.backward_char();
             }
 
-            // Remplacer le trait existant par le nouveau
-            buffer.delete(ref rule_start, ref rule_end);
-            buffer.insert_with_tags(ref rule_start, rule_text.str, -1, tag_rule);
+            // Vérifier que nous avons un trait significatif (au moins 10 caractères)
+            int rule_length_found = rule_end.get_offset() - rule_start.get_offset();
+            if (rule_length_found >= 10) {
+                // Remplacer le trait existant par le nouveau
+                buffer.delete(ref rule_start, ref rule_end);
+                buffer.insert_with_tags(ref rule_start, rule_text.str, -1, tag_rule);
+
+                // Mettre à jour les itérateurs pour continuer la recherche
+                buffer.get_iter_at_offset(out start_iter, rule_start.get_offset() + rule_text.str.length);
+                buffer.get_end_iter(out end_iter);
+                continue;
+            }
         }
 
         // Continuer la recherche depuis la fin du match actuel
@@ -1011,38 +1218,71 @@ private void update_existing_horizontal_rules() {
 
 // Calcule la largeur optimale pour un trait horizontal en fonction de la taille du widget
 private int calculate_rule_length() {
-    // Obtenir la largeur réelle du widget
-    int widget_width = this.get_width();
+    // 1) Essayer d'utiliser la largeur réellement visible du contenu
+    Gdk.Rectangle vis;
+    this.get_visible_rect(out vis);
+    int visible_width = vis.width;
 
-    // Si get_width() ne fonctionne pas, essayer get_allocated_width()
-    if (widget_width <= 0) {
-        widget_width = this.get_allocated_width();
+    // 2) Fallbacks si la vue n'est pas encore réalisée
+    if (visible_width <= 0) {
+    // GTK4: get_allocated_width() est déprécié, utiliser get_width()
+    visible_width = this.get_width();
+    }
+    if (visible_width <= 0) {
+        int w = this.get_width();
+        visible_width = (w > 0) ? w : 600;
     }
 
-    // Si toujours pas de largeur valide, utiliser une estimation basée sur le parent
-    if (widget_width <= 0) {
-        var parent = this.get_parent();
-        if (parent != null) {
-            widget_width = parent.get_width();
-        }
+    // 3) Mesurer précisément la largeur d'un caractère avec Pango
+    // Utiliser un layout pour le caractère de trait
+    var layout = this.create_pango_layout("─");
+    int char_w_units, char_h_units;
+    layout.get_size(out char_w_units, out char_h_units); // en unités Pango (1/ Pango.SCALE)
+    double char_px = (double) char_w_units / (double) Pango.SCALE;
+    if (char_px <= 0.0) {
+        // Fallback sur un M approximatif
+        var layout2 = this.create_pango_layout("M");
+        layout2.get_size(out char_w_units, out char_h_units);
+        char_px = (double) char_w_units / (double) Pango.SCALE;
     }
+    if (char_px <= 0.0) char_px = 7.0; // dernier recours
 
-    // Valeur de secours si tout échoue
-    if (widget_width <= 0) {
-        widget_width = 600; // Largeur minimale raisonnable
-    }
+    // 4) Déduire une petite marge pour scrollbars/paddings (~2ch de sécurité)
+    int margin_px = (int) (2 * char_px);
+    int available_px = int.max(visible_width - margin_px, 1);
 
-    // Calculer le nombre de caractères
-    // Largeur d'un caractère ─ est approximativement 8 pixels avec la police par défaut
-    int char_width = 7;
-    int available_width = widget_width - 80; // Marges, padding, scrollbar
-    int rule_length = available_width / char_width;
+    // 5) Calcul du nombre de glyphes
+    int rule_length = (int) ((double) available_px / char_px); // troncature suffisante pour valeurs positives
 
-    // Assurer une longueur minimum et maximum raisonnables
-    if (rule_length < 40) rule_length = 80;   // Minimum pour petites fenêtres
-    if (rule_length > 200) rule_length = 200; // Maximum pour très grandes fenêtres
+    // Longueur minimale de sécurité
+    if (rule_length < 3) rule_length = 3;
 
     return rule_length;
+}
+
+// Détecte si une ligne texte correspond à une règle Markdown (---, ***, ___) avec espaces optionnels
+private bool is_markdown_hr(string s) {
+    if (s == null || s.length < 3) return false;
+    try {
+        // ^\s*([-*_])(?:\s*\1){2,}\s*$
+        var regex = new Regex("^\\s*([-*_])(?:\\s*\\1){2,}\\s*$");
+        return regex.match(s);
+    } catch (RegexError e) {
+        // Fallback simple si Regex indisponible
+        string t = s.replace(" ", "");
+        if (t.length < 3) return false;
+        char c = t[0];
+        if (c != '-' && c != '*' && c != '_') return false;
+        for (int i = 1; i < t.length; i++) { if (t[i] != c) return false; }
+        return true;
+    }
+}
+
+// Détecte si une ligne est un trait Unicode (suite de '─')
+private bool is_unicode_rule_line(string s) {
+    if (s == null || s.length < 3) return false;
+    string t = s.replace("─", "").strip();
+    return t.length == 0;
 }
 
 public void insert_horizontal_rule() {
@@ -1455,6 +1695,12 @@ private void safe_insert_at_end(string text) {
 public void load_pivot_document(PivotDocument doc) {
     this.pivot_doc = doc;
     render_pivot_to_buffer(doc);
+
+    // Programmer la mise à jour des traits horizontaux après le rendu
+    Idle.add(() => {
+        refresh_horizontal_rules();
+        return false;
+    });
 }
 
 private void render_pivot_to_buffer(PivotDocument doc) {
@@ -1502,12 +1748,33 @@ private void render_pivot_to_buffer(PivotDocument doc) {
         else if (node is PivotParagraph) {
             var para = (PivotParagraph)node;
 
+            // Marquer le début du paragraphe pour l'indentation
+            TextIter para_start;
+            buffer.get_end_iter(out para_start);
+
             // Pour chaque segment, appliquer le style approprié, en gérant <u>…</u>
             foreach (var segment in para.segments) {
                 // Obtenir un nouvel itérateur à chaque insertion
                 TextIter segment_iter;
                 buffer.get_end_iter(out segment_iter);
                 insert_segment_with_html_underline(ref segment_iter, segment);
+            }
+
+            // Appliquer l'indentation si nécessaire
+            if (para.indent_level > 0) {
+                TextIter para_end;
+                buffer.get_end_iter(out para_end);
+
+                // Appliquer le tag d'indentation correspondant
+                string tag_name = @"indent-$(para.indent_level)";
+                var indent_tag = buffer.get_tag_table().lookup(tag_name);
+                if (indent_tag == null) {
+                    // Créer le tag d'indentation s'il n'existe pas
+                    indent_tag = buffer.create_tag(tag_name, null);
+                    int margin = para.indent_level * 20; // 20 pixels par niveau
+                    indent_tag.set("left-margin", margin);
+                }
+                buffer.apply_tag(indent_tag, para_start, para_end);
             }
 
             // Ajouter deux sauts de ligne après le paragraphe
@@ -1929,6 +2196,18 @@ public PivotDocument get_pivot_document() {
             } else {
                 var para = new PivotParagraph();
                 para.segments = extract_formatted_segments(txt, start_it, end_it);
+
+                // Capturer le niveau d'indentation depuis les TextTags
+                para.indent_level = 0;
+                for (int level = 1; level <= 10; level++) {
+                    string tag_name = @"indent-$level";
+                    var tag = buffer.get_tag_table().lookup(tag_name);
+                    if (tag != null && start_it.has_tag(tag)) {
+                        para.indent_level = level;
+                        break;
+                    }
+                }
+
                 doc.children.add(para);
             }
         }
@@ -2949,7 +3228,7 @@ public void increase_indent() {
         // Détecter le type de contenu sous le curseur
         Gtk.TextIter cursor;
         buffer.get_iter_at_mark(out cursor, buffer.get_insert());
-        
+
         if (is_heading_line(cursor)) {
             // Si c'est un titre, indenter seulement cette ligne
             Gtk.TextIter line_start = cursor;
@@ -2976,7 +3255,7 @@ public void decrease_indent() {
         // Détecter le type de contenu sous le curseur
         Gtk.TextIter cursor;
         buffer.get_iter_at_mark(out cursor, buffer.get_insert());
-        
+
         if (is_heading_line(cursor)) {
             // Si c'est un titre, désindenter seulement cette ligne
             Gtk.TextIter line_start = cursor;
@@ -2997,26 +3276,26 @@ public void decrease_indent() {
 private void find_current_paragraph_bounds(TextIter cursor, out TextIter start, out TextIter end) {
     start = cursor;
     end = cursor;
-    
+
     // Trouver le début du paragraphe
     // Un paragraphe commence après une ligne vide ou au début du buffer
     while (!start.is_start()) {
         TextIter line_start = start;
         line_start.set_line_offset(0);
-        
+
         // Vérifier la ligne précédente
         if (!line_start.backward_line()) {
             // On est à la première ligne, le paragraphe commence ici
             start.set_line_offset(0);
             break;
         }
-        
+
         TextIter prev_line_start = line_start;
         TextIter prev_line_end = prev_line_start;
         prev_line_end.forward_to_line_end();
-        
+
         string prev_line_text = buffer.get_text(prev_line_start, prev_line_end, false).strip();
-        
+
         if (prev_line_text == "") {
             // Ligne précédente vide, le paragraphe commence à la ligne courante
             line_start.forward_line();
@@ -3024,11 +3303,11 @@ private void find_current_paragraph_bounds(TextIter cursor, out TextIter start, 
             start.set_line_offset(0);
             break;
         }
-        
+
         // Continuer à remonter
         start = line_start;
     }
-    
+
     // Trouver la fin du paragraphe
     // Un paragraphe se termine avant une ligne vide ou à la fin du buffer
     while (!end.is_end()) {
@@ -3036,9 +3315,9 @@ private void find_current_paragraph_bounds(TextIter cursor, out TextIter start, 
         line_start.set_line_offset(0);
         TextIter line_end = line_start;
         line_end.forward_to_line_end();
-        
+
         string line_text = buffer.get_text(line_start, line_end, false).strip();
-        
+
         // Si la ligne courante est vide, on a atteint la fin du paragraphe
         if (line_text == "") {
             // Le paragraphe se termine à la ligne précédente
@@ -3048,7 +3327,7 @@ private void find_current_paragraph_bounds(TextIter cursor, out TextIter start, 
             }
             break;
         }
-        
+
         // Vérifier la ligne suivante
         TextIter next_line_start = line_end;
         if (!next_line_start.forward_line()) {
@@ -3056,22 +3335,22 @@ private void find_current_paragraph_bounds(TextIter cursor, out TextIter start, 
             end.forward_to_line_end();
             break;
         }
-        
+
         TextIter next_line_end = next_line_start;
         next_line_end.forward_to_line_end();
-        
+
         string next_line_text = buffer.get_text(next_line_start, next_line_end, false).strip();
-        
+
         if (next_line_text == "") {
             // Ligne suivante vide, le paragraphe se termine à la ligne courante
             end.forward_to_line_end();
             break;
         }
-        
+
         // Continuer à descendre
         end = next_line_start;
     }
-    
+
     // S'assurer que start est au début de sa ligne
     start.set_line_offset(0);
 }
@@ -3082,24 +3361,24 @@ private bool is_heading_line(TextIter cursor) {
     line_start.set_line_offset(0);
     TextIter line_end = cursor;
     line_end.forward_to_line_end();
-    
+
     string line_text = buffer.get_text(line_start, line_end, false).strip();
-    
+
     // Vérifier si la ligne commence par des # (titre ATX)
     if (line_text.has_prefix("#")) {
         return true;
     }
-    
+
     // Vérifier si la ligne suivante contient des = ou - (titre Setext)
     if (!line_end.forward_line()) {
         return false; // Pas de ligne suivante
     }
-    
+
     TextIter next_line_end = line_end;
     next_line_end.forward_to_line_end();
-    
+
     string next_line_text = buffer.get_text(line_end, next_line_end, false).strip();
-    
+
     // Titre Setext niveau 1 (====) ou niveau 2 (----)
     if (next_line_text.length > 0) {
         char first_char = next_line_text[0];
@@ -3115,33 +3394,86 @@ private bool is_heading_line(TextIter cursor) {
             return is_uniform;
         }
     }
-    
+
     return false;
 }
 
 /** Méthode utilitaire pour indenter/désindenter des lignes avec gestion intelligente de la numérotation */
 private void indent_lines_with_smart_numbering(TextIter start, TextIter end, bool increase) {
+    // Si mode NONE, ne rien faire
+    if (current_indentation_mode == IndentationMode.NONE) {
+        return;
+    }
+
     var start_line = start.get_line();
     var end_line = end.get_line();
-    
+
     // Bloquer les signaux temporairement pour éviter les notifications multiples
     buffer.begin_user_action();
-    
-    // Appliquer l'indentation ligne par ligne avec les tags
+
+    // Appliquer l'indentation selon le mode
     for (int line = start_line; line <= end_line; line++) {
         Gtk.TextIter line_start;
         buffer.get_iter_at_line(out line_start, line);
         Gtk.TextIter line_end = line_start;
         line_end.forward_to_line_end();
-        
-        if (increase) {
-            apply_indentation_increase(line_start, line_end);
-        } else {
-            apply_indentation_decrease(line_start, line_end);
+
+        switch (current_indentation_mode) {
+            case IndentationMode.SPACES:
+                if (increase) {
+                    apply_spaces_indentation_increase(line_start);
+                } else {
+                    apply_spaces_indentation_decrease(line_start);
+                }
+                break;
+
+            case IndentationMode.MARGIN_TAGS:
+                if (increase) {
+                    apply_indentation_increase(line_start, line_end);
+                } else {
+                    apply_indentation_decrease(line_start, line_end);
+                }
+                break;
+
+            case IndentationMode.RTF_FORMAT:
+                // Pour RTF, on utilise les tags mais on sauvera en format enrichi
+                if (increase) {
+                    apply_indentation_increase(line_start, line_end);
+                } else {
+                    apply_indentation_decrease(line_start, line_end);
+                }
+                break;
+
+            case IndentationMode.NONE:
+            default:
+                // Ne rien faire
+                break;
         }
     }
-    
+
     buffer.end_user_action();
+}
+
+/** Applique une indentation par espaces à une ligne */
+private void apply_spaces_indentation_increase(TextIter line_start) {
+    buffer.insert(ref line_start, "    ", -1);
+}
+
+/** Retire une indentation par espaces d'une ligne */
+private void apply_spaces_indentation_decrease(TextIter line_start) {
+    var line_end = line_start;
+    line_end.forward_to_line_end();
+    var line_text = buffer.get_text(line_start, line_end, false);
+
+    if (line_text.has_prefix("    ")) {
+        var end_iter = line_start;
+        end_iter.forward_chars(4);
+        buffer.delete(ref line_start, ref end_iter);
+    } else if (line_text.has_prefix("\t")) {
+        var end_iter = line_start;
+        end_iter.forward_char();
+        buffer.delete(ref line_start, ref end_iter);
+    }
 }
 
 /**
@@ -3150,7 +3482,7 @@ private void indent_lines_with_smart_numbering(TextIter start, TextIter end, boo
 private void apply_indentation_increase(TextIter line_start, TextIter line_end) {
     // Chercher le niveau d'indentation actuel
     int current_level = get_indentation_level(line_start, line_end);
-    
+
     if (current_level < 10) { // Limiter à 10 niveaux
         // Supprimer l'ancien tag d'indentation s'il existe
         if (current_level > 0) {
@@ -3160,7 +3492,7 @@ private void apply_indentation_increase(TextIter line_start, TextIter line_end) 
                 buffer.remove_tag(old_tag, line_start, line_end);
             }
         }
-        
+
         // Appliquer le nouveau tag d'indentation
         int new_level = current_level + 1;
         string new_tag_name = "indent-level-%d".printf(new_level);
@@ -3177,7 +3509,7 @@ private void apply_indentation_increase(TextIter line_start, TextIter line_end) 
 private void apply_indentation_decrease(TextIter line_start, TextIter line_end) {
     // Chercher le niveau d'indentation actuel
     int current_level = get_indentation_level(line_start, line_end);
-    
+
     if (current_level > 0) {
         // Supprimer l'ancien tag d'indentation
         string old_tag_name = "indent-level-%d".printf(current_level);
@@ -3185,7 +3517,7 @@ private void apply_indentation_decrease(TextIter line_start, TextIter line_end) 
         if (old_tag != null) {
             buffer.remove_tag(old_tag, line_start, line_end);
         }
-        
+
         // Appliquer le nouveau tag d'indentation s'il y en a un
         int new_level = current_level - 1;
         if (new_level > 0) {
@@ -3203,7 +3535,7 @@ private void apply_indentation_decrease(TextIter line_start, TextIter line_end) 
  */
 private int get_indentation_level(TextIter line_start, TextIter line_end) {
     var table = buffer.get_tag_table();
-    
+
     // Chercher les tags d'indentation appliqués à cette ligne
     for (int level = 10; level >= 1; level--) {
         string tag_name = "indent-level-%d".printf(level);
@@ -3215,7 +3547,7 @@ private int get_indentation_level(TextIter line_start, TextIter line_end) {
             }
         }
     }
-    
+
     return 0; // Pas d'indentation
 }
 
@@ -3246,7 +3578,7 @@ private NumberedListInfo? parse_numbered_list_line(string line_text) {
     } catch (RegexError e) {
         warning("Erreur regex: %s", e.message);
     }
-    
+
     var info = NumberedListInfo();
     info.is_numbered_list = false;
     return info;
@@ -3257,32 +3589,164 @@ private void renumber_lists_after_indent(int start_line, int end_line, Gee.Array
     for (int line = start_line; line <= end_line; line++) {
         int list_index = line - start_line;
         if (list_index >= original_lists.size) continue;
-        
+
         var original_info = original_lists[list_index];
         if (original_info == null || !original_info.is_numbered_list) continue;
-        
+
         // Obtenir la ligne actuelle après indentation
         Gtk.TextIter line_start;
         buffer.get_iter_at_line(out line_start, line);
         Gtk.TextIter line_end = line_start;
         line_end.forward_to_line_end();
-        
+
         string current_line = buffer.get_text(line_start, line_end, false);
         var current_info = parse_numbered_list_line(current_line);
-        
+
         if (current_info != null && current_info.is_numbered_list) {
             // Calculer le nouveau numéro selon l'algorithme : n°=present_n°.i++
             // Pour la première indentation, on garde i=1, puis i++
             int sub_number = 1; // i commence à 1
             string new_number = @"$(original_info.current_number).$(sub_number)";
-            
+
             // Construire la nouvelle ligne
             string new_line = current_info.prefix + new_number + current_info.suffix + current_info.content;
-            
+
             // Remplacer la ligne
             buffer.delete(ref line_start, ref line_end);
             buffer.insert(ref line_start, new_line, -1);
         }
+    }
+}
+
+/** Conversion d'un mode d'indentation vers un autre */
+public void convert_indentation_from_to(IndentationMode from_mode, IndentationMode to_mode) {
+    if (from_mode == to_mode) {
+        return;
+    }
+
+    buffer.begin_user_action();
+
+    // Parcourir tout le buffer ligne par ligne
+    var total_lines = buffer.get_line_count();
+
+    for (int line = 0; line < total_lines; line++) {
+        Gtk.TextIter line_start;
+        buffer.get_iter_at_line(out line_start, line);
+        Gtk.TextIter line_end = line_start;
+        line_end.forward_to_line_end();
+
+        var line_text = buffer.get_text(line_start, line_end, false);
+
+        // Détecter le niveau d'indentation actuel selon le mode source
+        int indent_level = 0;
+
+        switch (from_mode) {
+            case IndentationMode.SPACES:
+                // Compter les espaces/tabs au début
+                for (int i = 0; i < line_text.length; i++) {
+                    if (line_text[i] == ' ') {
+                        indent_level++;
+                    } else if (line_text[i] == '\t') {
+                        indent_level += 4; // Conversion tab = 4 espaces
+                    } else {
+                        break;
+                    }
+                }
+                indent_level = indent_level / 4; // Niveau logique
+                break;
+
+            case IndentationMode.MARGIN_TAGS:
+            case IndentationMode.RTF_FORMAT:
+                // Détecter les tags d'indentation
+                for (int level = 10; level >= 1; level--) {
+                    var tag = buffer.tag_table.lookup(@"indent-level-$level");
+                    if (tag != null && line_start.has_tag(tag)) {
+                        indent_level = level;
+                        break;
+                    }
+                }
+                break;
+
+            case IndentationMode.NONE:
+            default:
+                indent_level = 0;
+                break;
+        }
+
+        // Si il y a de l'indentation à convertir
+        if (indent_level > 0) {
+            // Supprimer l'ancienne indentation
+            remove_line_indentation(line_start, line_end, from_mode);
+
+            // Appliquer la nouvelle indentation
+            apply_line_indentation(line_start, line_end, to_mode, indent_level);
+        }
+    }
+
+    buffer.end_user_action();
+}
+
+/** Supprime l'indentation d'une ligne selon le mode spécifié */
+private void remove_line_indentation(TextIter line_start, TextIter line_end, IndentationMode mode) {
+    switch (mode) {
+        case IndentationMode.SPACES:
+            // Supprimer espaces/tabs au début
+            var line_text = buffer.get_text(line_start, line_end, false);
+            int chars_to_remove = 0;
+            for (int i = 0; i < line_text.length; i++) {
+                if (line_text[i] == ' ' || line_text[i] == '\t') {
+                    chars_to_remove++;
+                } else {
+                    break;
+                }
+            }
+            if (chars_to_remove > 0) {
+                var end_remove = line_start;
+                end_remove.forward_chars(chars_to_remove);
+                buffer.delete(ref line_start, ref end_remove);
+            }
+            break;
+
+        case IndentationMode.MARGIN_TAGS:
+        case IndentationMode.RTF_FORMAT:
+            // Supprimer tous les tags d'indentation
+            for (int level = 1; level <= 10; level++) {
+                var tag = buffer.tag_table.lookup(@"indent-level-$level");
+                if (tag != null) {
+                    buffer.remove_tag(tag, line_start, line_end);
+                }
+            }
+            break;
+
+        case IndentationMode.NONE:
+        default:
+            break;
+    }
+}
+
+/** Applique l'indentation à une ligne selon le mode et le niveau spécifiés */
+private void apply_line_indentation(TextIter line_start, TextIter line_end, IndentationMode mode, int level) {
+    switch (mode) {
+        case IndentationMode.SPACES:
+            // Insérer les espaces appropriés
+            var spaces = string.nfill(level * 4, ' ');
+            buffer.insert(ref line_start, spaces, -1);
+            break;
+
+        case IndentationMode.MARGIN_TAGS:
+        case IndentationMode.RTF_FORMAT:
+            // Appliquer le tag approprié
+            if (level >= 1 && level <= 10) {
+                var tag = buffer.tag_table.lookup(@"indent-level-$level");
+                if (tag != null) {
+                    buffer.apply_tag(tag, line_start, line_end);
+                }
+            }
+            break;
+
+        case IndentationMode.NONE:
+        default:
+            break;
     }
 }
 
