@@ -140,7 +140,7 @@ public WysiwygEditor() {
     // buffer.changed.connect(() => {
     //     buffer_changed();
     // });
-    
+
     // Code debug retiré.
 }
 
@@ -2485,142 +2485,10 @@ public PivotDocument get_pivot_document() {
     return doc;
 }
 
-// Extrait des segments inline en se basant sur les tags appliqués dans la ligne courante
-// TODO (cleanup): extract_inline_segments_from_text et fonctions associées peuvent être supprimées si la nouvelle
-// pipeline de rendu confirme leur inutilité. Conservées temporairement pour référence.
-private Gee.List<TextSegment> extract_inline_segments_from_text(string plain, TextIter line_start, TextIter line_end) {
-    var out = new Gee.ArrayList<TextSegment>();
-    if (plain == null || plain.length == 0) return out;
-    // On rebalaye les caractères dans la plage line_start..line_end et on reconstruit les runs
-    TextIter it = line_start;
-    TextIter run_start = it;
-    // État courant
-    bool b = false, i = false, s = false, c = false, u = false;
-    string? href = null; string? fgc = null; string? bgc = null;
-
-    string? current_href(TextIter a) {
-        foreach (var name in link_tag_names) {
-            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
-            if (t != null && a.has_tag(t)) {
-                string enc = name.substring("link::u:".length);
-                return GLib.Uri.unescape_string(enc);
-            }
-        }
-        return null;
-    }
-    string? current_fg(TextIter a) {
-        foreach (var name in fg_tag_names) {
-            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
-            if (t != null && a.has_tag(t)) {
-                return name.substring("fg::".length);
-            }
-        }
-        return null;
-    }
-    string? current_bg(TextIter a) {
-        foreach (var name in bg_tag_names) {
-            var t = (Gtk.TextTag) buffer.get_tag_table().lookup(name);
-            if (t != null && a.has_tag(t)) {
-                return name.substring("bg::".length);
-            }
-        }
-        return null;
-    }
-    // helper pour comparer l'état
-    bool same_state(TextIter a, bool cb, bool ci, bool cs, bool cc, bool cu, string? ch, string? cfg, string? cbg) {
-        return a.has_tag(tag_bold) == cb && a.has_tag(tag_italic) == ci && a.has_tag(tag_strikethrough) == cs && a.has_tag(tag_code) == cc && a.has_tag(tag_underline) == cu && current_href(a) == ch && current_fg(a) == cfg && current_bg(a) == cbg;
-    }
-
-    // init état
-    b = it.has_tag(tag_bold); i = it.has_tag(tag_italic); s = it.has_tag(tag_strikethrough); c = it.has_tag(tag_code); u = it.has_tag(tag_underline); href = current_href(it); fgc = current_fg(it); bgc = current_bg(it);
-    run_start = it;
-    while (it.compare(line_end) < 0) {
-        TextIter next = it; if (!next.forward_char()) break;
-    bool nb = next.has_tag(tag_bold), ni = next.has_tag(tag_italic), ns = next.has_tag(tag_strikethrough), nc = next.has_tag(tag_code), nu = next.has_tag(tag_underline); string? nhref = current_href(next); string? nfg = current_fg(next); string? nbg = current_bg(next);
-        if (nb != b || ni != i || ns != s || nc != c || nu != u || nhref != href || nfg != fgc || nbg != bgc) {
-            string run = buffer.get_text(run_start, it, false);
-            if (run.length > 0) {
-                var fmts = new Gee.HashSet<TextFormatting>();
-                if (b) fmts.add(TextFormatting.BOLD);
-                if (i) fmts.add(TextFormatting.ITALIC);
-                if (s) fmts.add(TextFormatting.STRIKETHROUGH);
-                if (c) fmts.add(TextFormatting.CODE);
-                if (u) fmts.add(TextFormatting.UNDERLINE);
-                var seg = new TextSegment(run, fmts);
-                seg.link_href = href; seg.fg_color = fgc; seg.bg_color = bgc;
-                out.add(seg);
-            }
-            run_start = it;
-            b = nb; i = ni; s = ns; c = nc; u = nu; href = nhref; fgc = nfg; bgc = nbg;
-        }
-        it = next;
-    }
-    // dernier run
-    if (run_start.compare(line_end) < 0) {
-        string run = buffer.get_text(run_start, line_end, false);
-        if (run.length > 0) {
-            var fmts = new Gee.HashSet<TextFormatting>();
-            if (b) fmts.add(TextFormatting.BOLD);
-            if (i) fmts.add(TextFormatting.ITALIC);
-            if (s) fmts.add(TextFormatting.STRIKETHROUGH);
-            if (c) fmts.add(TextFormatting.CODE);
-            if (u) fmts.add(TextFormatting.UNDERLINE);
-            var seg = new TextSegment(run, fmts);
-            seg.link_href = href; seg.fg_color = fgc; seg.bg_color = bgc;
-            out.add(seg);
-        }
-    }
-    return out;
-}
 
 /**
   * Trouve les limites d'un paragraphe dans le buffer - Méthode améliorée
   */
-// TODO (cleanup): find_paragraph_bounds conservée pour future recherche paragraphe.
-private bool find_paragraph_bounds(string para_text, out TextIter start, out TextIter end) {
-    buffer.get_start_iter(out start);
-    buffer.get_end_iter(out end);
-
-    // Approche plus sûre : au lieu de rechercher le texte exact,
-    // rechercher ligne par ligne
-    TextIter iter;
-    buffer.get_start_iter(out iter);
-
-    while (!iter.is_end()) {
-        TextIter line_start = iter;
-        TextIter line_end = iter;
-
-        line_end.forward_to_line_end();
-
-        // Extraire la ligne
-        string line_text = buffer.get_text(line_start, line_end, false);
-
-        // Si la ligne contient le début du paragraphe
-        if (line_text.contains(para_text.substring(0, int.min(para_text.length, 30)))) {
-            start = line_start;
-
-            // Avancer d'autant de caractères qu'il y a dans para_text (approximativement)
-            TextIter potential_end = start;
-            potential_end.forward_chars(para_text.length);
-
-            // Ne pas dépasser la fin du buffer
-            if (potential_end.compare(end) > 0) {
-                potential_end = end;
-            }
-
-            end = potential_end;
-            return true;
-        }
-
-        // Passer à la ligne suivante
-        if (!iter.forward_line()) {
-            break;
-        }
-    }
-
-    // Paragraphe non trouvé, retourner les itérateurs du début et de la fin
-    return false;
-}
 
 /**
   * Extrait les segments de texte formatés d'un paragraphe - Méthode améliorée
@@ -2844,54 +2712,6 @@ private void clean_list_prefix_from_segments(Gee.List<TextSegment> segments, boo
 /**
   * Analyse et applique le formatage inline dans un paragraphe
   */
-// TODO (cleanup): ancienne implémentation apply_inline_formatting (supprimable)
-private void apply_inline_formatting(TextIter start_iter, int length, string text) {
-    // Formatage gras - recherche des séquences **texte**
-    int pos = 0;
-    while ((pos = text.index_of("**", pos)) != -1) {
-        int end_pos = text.index_of("**", pos + 2);
-        if (end_pos != -1) {
-            TextIter bold_start = start_iter;
-            bold_start.forward_chars(pos);
-
-            TextIter bold_end = start_iter;
-            bold_end.forward_chars(end_pos + 2);         // +2 pour inclure les **
-
-            buffer.apply_tag(tag_bold, bold_start, bold_end);
-
-            pos = end_pos + 2;
-        }
-        else {
-            break;
-        }
-    }
-
-    // Formatage italique - recherche des séquences *texte*
-    pos = 0;
-    while ((pos = text.index_of("*", pos)) != -1) {
-        if (pos > 0 && text[pos - 1] == '*') {
-            // Ignorer les ** déjà traités pour le gras
-            pos++;
-            continue;
-        }
-
-        int end_pos = text.index_of("*", pos + 1);
-        if (end_pos != -1 && (end_pos + 1 >= text.length || text[end_pos + 1] != '*')) {
-            TextIter italic_start = start_iter;
-            italic_start.forward_chars(pos);
-
-            TextIter italic_end = start_iter;
-            italic_end.forward_chars(end_pos + 1);         // +1 pour inclure le *
-
-            buffer.apply_tag(tag_italic, italic_start, italic_end);
-
-            pos = end_pos + 1;
-        }
-        else {
-            pos++;
-        }
-    }
-}
 
 public void set_style(int size, string family, string color) {
     if (css_provider == null) {
@@ -3579,39 +3399,6 @@ private NumberedListInfo? parse_numbered_list_line(string line_text) {
 }
 
 /** Renumérote les listes après indentation selon l'algorithme n°=present_n°.i++ */
-// TODO (cleanup): renumber_lists_after_indent non utilisée encore (peut être retirée)
-private void renumber_lists_after_indent(int start_line, int end_line, Gee.ArrayList<NumberedListInfo?> original_lists) {
-    for (int line = start_line; line <= end_line; line++) {
-        int list_index = line - start_line;
-        if (list_index >= original_lists.size) continue;
-
-        var original_info = original_lists[list_index];
-        if (original_info == null || !original_info.is_numbered_list) continue;
-
-        // Obtenir la ligne actuelle après indentation
-        Gtk.TextIter line_start;
-        buffer.get_iter_at_line(out line_start, line);
-        Gtk.TextIter line_end = line_start;
-        line_end.forward_to_line_end();
-
-        string current_line = buffer.get_text(line_start, line_end, false);
-        var current_info = parse_numbered_list_line(current_line);
-
-        if (current_info != null && current_info.is_numbered_list) {
-            // Calculer le nouveau numéro selon l'algorithme : n°=present_n°.i++
-            // Pour la première indentation, on garde i=1, puis i++
-            int sub_number = 1; // i commence à 1
-            string new_number = @"$(original_info.current_number).$(sub_number)";
-
-            // Construire la nouvelle ligne
-            string new_line = current_info.prefix + new_number + current_info.suffix + current_info.content;
-
-            // Remplacer la ligne
-            buffer.delete(ref line_start, ref line_end);
-            buffer.insert(ref line_start, new_line, -1);
-        }
-    }
-}
 
 /** Conversion d'un mode d'indentation vers un autre */
 public void convert_indentation_from_to(IndentationMode from_mode, IndentationMode to_mode) {
