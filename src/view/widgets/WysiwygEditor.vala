@@ -1311,8 +1311,7 @@ public void insert_horizontal_rule() {
         buffer.insert(ref iter, "\n", -1);
     }
 
-    // Marque pour le début de la règle
-    TextMark rule_start = buffer.create_mark(null, iter, true);
+    // Pas de marque : insertion directe avec tags
 
     // Calculer la largeur optimale
     int rule_length = calculate_rule_length();
@@ -1330,25 +1329,19 @@ public void insert_horizontal_rule() {
     }
     string rule_line = rule_builder.str;
 
-    // Insérer exactement la ligne du trait + saut de ligne unique ; on gèrera une ligne vide après
-    buffer.insert(ref iter, rule_line + "\n", -1);
-
-    // Délimiter la zone du trait
-    TextIter start;
-    buffer.get_iter_at_mark(out start, rule_start);
-    TextIter end = start;
-    end.forward_chars(rule_line.length);
-    buffer.apply_tag(tag_rule, start, end);
-
-    // Appliquer tag neutre sur la ligne complète (pour effacer autres attributs de la ligne)
-    TextIter line_full_start = start; line_full_start.set_line_offset(0);
+    // Insérer la ligne du trait avec son tag glyphes
+    buffer.insert_with_tags(ref iter, rule_line, -1, tag_rule);
+    // Ajouter le saut de ligne après (non taggé)
+    buffer.insert(ref iter, "\n", -1);
+    // Retrouver la ligne que l'on vient d'insérer pour appliquer le tag neutre de ligne
+    TextIter line_full_start = iter; line_full_start.backward_line(); line_full_start.set_line_offset(0);
     TextIter line_full_end = line_full_start; line_full_end.forward_to_line_end();
     buffer.apply_tag(tag_rule_line, line_full_start, line_full_end);
 
     // S'assurer que la ligne suivante n'hérite d'aucun attribut visuel du trait.
     // Certaines implémentations de TextView peuvent réutiliser les attributs côté rendu si la
     // ligne est vide; on force donc une ligne vide neutre.
-    TextIter after_rule = end;
+    TextIter after_rule = iter; // déjà après le saut de ligne du trait
     if (!after_rule.ends_line()) {
         after_rule.forward_to_line_end();
     }
@@ -1366,16 +1359,15 @@ public void insert_horizontal_rule() {
     }
     if (need_blank) {
         // Revenir au point après le trait et insérer une nouvelle ligne vide
-        TextIter insert_pt = end; insert_pt.forward_to_line_end();
-        buffer.insert(ref insert_pt, "\n", -1);
+        TextIter insert_pt2 = iter; insert_pt2.forward_to_line_end();
+        buffer.insert(ref insert_pt2, "\n", -1);
     }
     // Optionnel: retirer explicitement tag_rule de ce qui suit, par sécurité
-    TextIter cleanup_start = end; cleanup_start.forward_line();
+    TextIter cleanup_start = iter; cleanup_start.forward_line();
     TextIter cleanup_end = cleanup_start; cleanup_end.forward_to_line_end();
     buffer.remove_tag(tag_rule, cleanup_start, cleanup_end);
     buffer.remove_tag(tag_rule_line, cleanup_start, cleanup_end);
-
-    buffer.delete_mark(rule_start);
+    // Fin insertion trait
 }
 
 public void insert_table_object(PivotTable table) {
