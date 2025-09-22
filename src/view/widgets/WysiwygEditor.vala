@@ -36,6 +36,7 @@ private Gtk.TextTag tag_list;
 private Gtk.TextTag tag_underline;
 private Gtk.TextTag tag_image;
 private Gtk.TextTag tag_rule;
+private Gtk.TextTag tag_rule_line; // Tag minimal pour isoler la ligne du trait (éviter fuite attributs)
 private Gtk.TextTag tag_table_header;
 private Gtk.TextTag tag_table_cell;
 private Gtk.TextTag tag_table_border;
@@ -279,10 +280,16 @@ private void ensure_tags() {
     // Rule (trait de séparation horizontal)
     tag_rule = (Gtk.TextTag) table.lookup("rule");
     if (tag_rule == null) {
+        // Tag STRICTEMENT limité au style du glyph (couleur + poids) sans taille exagérée qui peut
+        // influencer la hauteur de ligne suivante dans certains caches de layout.
         tag_rule = buffer.create_tag("rule",
                                    "foreground", "#CCCCCC",
-                                   "size", 12000,
                                    "weight", Pango.Weight.LIGHT);
+    }
+    // Tag appliqué à toute la ligne pour neutraliser d'anciens attributs potentiels (p.ex. list/quote)
+    tag_rule_line = (Gtk.TextTag) table.lookup("rule_line");
+    if (tag_rule_line == null) {
+        tag_rule_line = buffer.create_tag("rule_line"); // neutre
     }
 
     // Table header (en-têtes grisés)
@@ -1202,7 +1209,19 @@ private void update_existing_horizontal_rules() {
             if (rule_length_found >= 10) {
                 // Remplacer le trait existant par le nouveau
                 buffer.delete(ref rule_start, ref rule_end);
+                // Réinsérer uniquement les glyphes avec tag de glyphes
                 buffer.insert_with_tags(ref rule_start, rule_text.str, -1, tag_rule);
+                // Appliquer un tag neutre sur la ligne entière pour purger anciens attributs
+                Gtk.TextIter full_line_start = rule_start; full_line_start.set_line_offset(0);
+                Gtk.TextIter full_line_end = full_line_start; full_line_end.forward_to_line_end();
+                buffer.apply_tag(tag_rule_line, full_line_start, full_line_end);
+                // Nettoyer complètement la ligne suivante
+                Gtk.TextIter next_line_start = full_line_end;
+                if (next_line_start.forward_line()) {
+                    Gtk.TextIter next_line_end = next_line_start; next_line_end.forward_to_line_end();
+                    buffer.remove_tag(tag_rule, next_line_start, next_line_end);
+                    buffer.remove_tag(tag_rule_line, next_line_start, next_line_end);
+                }
 
                 // Mettre à jour les itérateurs pour continuer la recherche
                 buffer.get_iter_at_offset(out start_iter, rule_start.get_offset() + rule_text.str.length);
@@ -1297,6 +1316,12 @@ public void insert_horizontal_rule() {
 
     // Calculer la largeur optimale
     int rule_length = calculate_rule_length();
+    // Normalisation: éviter petites fluctuations (ex: 111 vs 114) dues aux marges/scrollbars.
+    // On arrondit au multiple de 3 le plus proche et on borne entre 30 et 180.
+    if (rule_length < 30) rule_length = 30;
+    if (rule_length > 180) rule_length = 180;
+    int rem = rule_length % 3;
+    if (rem == 1) rule_length -= 1; else if (rem == 2) rule_length += 1;
 
     // Créer un trait continu et élégant avec des caractères Unicode
     StringBuilder rule_builder = new StringBuilder();
@@ -1314,6 +1339,11 @@ public void insert_horizontal_rule() {
     TextIter end = start;
     end.forward_chars(rule_line.length);
     buffer.apply_tag(tag_rule, start, end);
+
+    // Appliquer tag neutre sur la ligne complète (pour effacer autres attributs de la ligne)
+    TextIter line_full_start = start; line_full_start.set_line_offset(0);
+    TextIter line_full_end = line_full_start; line_full_end.forward_to_line_end();
+    buffer.apply_tag(tag_rule_line, line_full_start, line_full_end);
 
     // S'assurer que la ligne suivante n'hérite d'aucun attribut visuel du trait.
     // Certaines implémentations de TextView peuvent réutiliser les attributs côté rendu si la
@@ -1343,6 +1373,7 @@ public void insert_horizontal_rule() {
     TextIter cleanup_start = end; cleanup_start.forward_line();
     TextIter cleanup_end = cleanup_start; cleanup_end.forward_to_line_end();
     buffer.remove_tag(tag_rule, cleanup_start, cleanup_end);
+    buffer.remove_tag(tag_rule_line, cleanup_start, cleanup_end);
 
     buffer.delete_mark(rule_start);
 }
