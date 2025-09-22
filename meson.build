@@ -1,9 +1,12 @@
 project('IntaText', 'vala', version: '0.1.0',
-        license: 'GPL-3.0-or-later',
-        default_options: [
-            'warning_level=3',
-            'debug=true'
-        ])
+    license: 'GPL-3.0-or-later',
+    default_options: [
+      'warning_level=3',
+      'debug=true'
+    ])
+
+# Option pour réduire le bruit des warnings C (désactivé par défaut pour ne pas masquer les réels problèmes)
+option('suppress_warnings', type: 'boolean', value: false, description: 'Supprime une partie des warnings C bruyants (-Wunused-parameter, -Wcast-function-type, etc.)')
 
 gtk_dep = dependency('gtk4', version: '>=4.1', required: true)
 adw_dep = dependency('libadwaita-1', version: '>=1.0', required: true)
@@ -125,7 +128,19 @@ add_project_arguments(['--target-glib=auto'], language: 'vala')
 add_project_arguments(['--pkg=gtk4', '--pkg=libadwaita-1', '--pkg=gee-0.8', '--pkg=gio-2.0'], language: 'vala')
 
 # Dans votre fichier meson.build principal
-add_project_arguments(['--disable-warnings'], language: 'vala')
+# Laisser valac émettre les warnings; on ne supprime pas globalement côté Vala.
+
+# Appliquer éventuellement des suppressions ciblées côté C selon l'option
+if get_option('suppress_warnings')
+  add_global_arguments([
+    '-Wno-unused-parameter',
+    '-Wno-unused-but-set-variable',
+    '-Wno-cast-function-type',
+    '-Wno-unused-function',
+    '-Wno-unused-label',
+    '-Wno-unused-variable'
+  ], language: 'c')
+endif
 
 # Définir les dépendances selon la disponibilité de libdl
 deps = [gtk_dep, adw_dep, gee_dep, json_dep, gio_dep]
@@ -211,3 +226,8 @@ executable('md_wysiwyg_rt',
   dependencies: [gtk_dep, adw_dep, gee_dep, json_dep, gio_dep],
   install: false
 )
+
+# Inclure les tests si demandé
+if get_option('build-tests')
+  subdir('tests')
+endif
