@@ -340,8 +340,8 @@ private void setup_link_interactions() {
 
     // Gestionnaire de clics pour Ctrl+Click sur les liens
     var click_controller = new Gtk.GestureClick();
-    click_controller.pressed.connect((n_press, x, y) => {
-        on_mouse_click(click_controller, n_press, x, y);
+    click_controller.pressed.connect((_n_press, _x, _y) => {
+        on_mouse_click(click_controller, _n_press, _x, _y);
     });
     this.add_controller(click_controller);
 }
@@ -1453,7 +1453,7 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
 
             // Ajouter un gestionnaire de clic pour s'assurer que le TextView peut recevoir le focus
             var click_controller = new Gtk.GestureClick();
-            click_controller.pressed.connect((n_press, x, y) => {
+            click_controller.pressed.connect((_n_press, _x, _y) => {
                 text_view.grab_focus();
             });
             text_view.add_controller(click_controller);
