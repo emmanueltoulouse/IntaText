@@ -1338,35 +1338,36 @@ public void insert_horizontal_rule() {
     TextIter line_full_end = line_full_start; line_full_end.forward_to_line_end();
     buffer.apply_tag(tag_rule_line, line_full_start, line_full_end);
 
-    // S'assurer que la ligne suivante n'hérite d'aucun attribut visuel du trait.
-    // Certaines implémentations de TextView peuvent réutiliser les attributs côté rendu si la
-    // ligne est vide; on force donc une ligne vide neutre.
-    TextIter after_rule = iter; // déjà après le saut de ligne du trait
-    if (!after_rule.ends_line()) {
-        after_rule.forward_to_line_end();
-    }
-    // Insérer une ligne vide si elle n'existe pas déjà
-    TextIter check = after_rule;
-    bool need_blank = true;
-    if (check.forward_line()) {
-        // Si la prochaine ligne est déjà vide, pas besoin de dupliquer
-        TextIter ls = check; ls.set_line_offset(0);
-        TextIter le = ls; le.forward_to_line_end();
-        string next_line = buffer.get_text(ls, le, false);
-        if (next_line.strip().length == 0) {
-            need_blank = false;
-        }
-    }
-    if (need_blank) {
-        // Revenir au point après le trait et insérer une nouvelle ligne vide
-        TextIter insert_pt2 = iter; insert_pt2.forward_to_line_end();
-        buffer.insert(ref insert_pt2, "\n", -1);
-    }
-    // Optionnel: retirer explicitement tag_rule de ce qui suit, par sécurité
+    // Nettoyage minimal : aucune ligne vide supplémentaire inutile
+    // (suppression de la logique précédente d'insertion conditionnelle)
+    // Sécurité: retirer tags résiduels sur la ligne suivante si déjà existants
     TextIter cleanup_start = iter; cleanup_start.forward_line();
     TextIter cleanup_end = cleanup_start; cleanup_end.forward_to_line_end();
     buffer.remove_tag(tag_rule, cleanup_start, cleanup_end);
     buffer.remove_tag(tag_rule_line, cleanup_start, cleanup_end);
+
+    // Compression: si deux lignes vides consécutives suivent, en conserver une seule
+    TextIter comp_start = iter; // position après le saut de ligne du trait
+    // comp_start est sur une ligne vide; vérifier la suivante
+    TextIter first_line_start = comp_start; first_line_start.set_line_offset(0);
+    TextIter first_line_end = first_line_start; first_line_end.forward_to_line_end();
+    string first_text = buffer.get_text(first_line_start, first_line_end, false);
+    if (first_text.strip().length == 0) {
+        TextIter second_line_start = first_line_end; if (second_line_start.forward_line()) {
+            TextIter second_line_end = second_line_start; second_line_end.forward_to_line_end();
+            string second_text = buffer.get_text(second_line_start, second_line_end, false);
+            if (second_text.strip().length == 0) {
+                // Supprimer la seconde ligne vide
+                TextIter del_start = second_line_start; TextIter del_end = second_line_end;
+                // Inclure aussi le saut de ligne terminal si possible
+                if (del_end.forward_char()) {
+                    // Reculer d'un si on a dépassé
+                    del_end.backward_char();
+                }
+                buffer.delete(ref del_start, ref del_end);
+            }
+        }
+    }
     // Fin insertion trait
 }
 
