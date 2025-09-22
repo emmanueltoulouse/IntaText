@@ -13,11 +13,15 @@ gee_dep = dependency('gee-0.8', required: true)
 json_dep = dependency('json-glib-1.0', required: true)
 gio_dep = dependency('gio-2.0', required: true)
 # Support pour le chargement dynamique de plugins
-dl_dep = dependency('dl', required: false)
-
-# Si libdl n'est pas trouvée comme dépendance, essayer de la chercher comme bibliothèque
-if not dl_dep.found()
-    dl_dep = meson.get_compiler('c').find_library('dl', required: false)
+# Détection propre de libdl : tester la présence de dlopen sans générer d'avertissement custom lookup
+c_comp = meson.get_compiler('c')
+have_dlopen = c_comp.has_function('dlopen')
+dl_dep = []
+if have_dlopen
+  libdl = c_comp.find_library('dl', required: false)
+  if libdl.found()
+    dl_dep = [libdl]
+  endif
 endif
 
 # Import des modules GNOME
@@ -155,9 +159,9 @@ endif
 
 # Définir les dépendances selon la disponibilité de libdl
 deps = [gtk_dep, adw_dep, gee_dep, json_dep, gio_dep]
-if dl_dep.found()
-    deps += dl_dep
-    add_project_arguments(['--pkg=posix'], language: 'vala')
+if have_dlopen and libdl.found()
+  deps += libdl
+  add_project_arguments(['--pkg=posix'], language: 'vala')
 endif
 
 executable('IntaText',
@@ -168,8 +172,10 @@ executable('IntaText',
 )
 
 # Installation des répertoires pour les plugins
-install_emptydir(join_paths(get_option('libdir'), 'intatext', 'plugins'))
-install_emptydir(join_paths(get_option('datadir'), 'intatext', 'plugins'))
+if meson.version().version_compare('>=0.60.0')
+  install_emptydir(join_paths(get_option('libdir'), 'intatext', 'plugins'))
+  install_emptydir(join_paths(get_option('datadir'), 'intatext', 'plugins'))
+endif
 
 # Installation des exemples de plugins
 install_data(
