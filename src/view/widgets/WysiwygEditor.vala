@@ -1301,44 +1301,37 @@ private bool is_markdown_hr(string s) {
 
 public void insert_horizontal_rule() {
     ensure_tags();
+    // Obtenir la position actuelle du curseur
+    TextIter iter;
+    buffer.get_iter_at_mark(out iter, buffer.get_insert());
 
-    // Insérer la ligne du trait avec son tag glyphes (aucune ligne vide ajoutée après)
+    // S'assurer qu'on est au début d'une ligne
+    if (!iter.starts_line()) {
+        buffer.insert(ref iter, "\n", -1);
+    }
+
+    // Calculer la largeur optimale
+    int rule_length = calculate_rule_length();
+    if (rule_length < 30) rule_length = 30;
+    if (rule_length > 180) rule_length = 180;
+    int rem = rule_length % 3;
+    if (rem == 1) rule_length -= 1; else if (rem == 2) rule_length += 1;
+
+    // Construire la ligne de trait
+    StringBuilder rule_builder = new StringBuilder();
+    for (int i = 0; i < rule_length; i++) rule_builder.append_unichar('─');
+    string rule_line = rule_builder.str;
+
+    // Insérer le trait (pas de saut de ligne ajouté après)
     buffer.insert_with_tags(ref iter, rule_line, -1, tag_rule);
 
-    // Appliquer le tag neutre sur toute la ligne (curseur en fin de ligne courante)
-    TextIter line_full_start = iter; line_full_start.set_line_offset(0);
-    TextIter line_full_end = line_full_start; line_full_end.forward_to_line_end();
-    buffer.apply_tag(tag_rule_line, line_full_start, line_full_end);
+    // Appliquer tag neutre sur la ligne complète
+    TextIter line_start = iter; line_start.set_line_offset(0);
+    TextIter line_end = line_start; line_end.forward_to_line_end();
+    buffer.apply_tag(tag_rule_line, line_start, line_end);
 
-    // Positionner le curseur explicitement à la fin de la ligne du trait
+    // Placer le curseur à la fin de la ligne du trait
     buffer.place_cursor(iter);
-    // Fin insertion trait sans saut de ligne supplémentaire
-    buffer.remove_tag(tag_rule, cleanup_start, cleanup_end);
-    buffer.remove_tag(tag_rule_line, cleanup_start, cleanup_end);
-
-    // Compression: si deux lignes vides consécutives suivent, en conserver une seule
-    TextIter comp_start = iter; // position après le saut de ligne du trait
-    // comp_start est sur une ligne vide; vérifier la suivante
-    TextIter first_line_start = comp_start; first_line_start.set_line_offset(0);
-    TextIter first_line_end = first_line_start; first_line_end.forward_to_line_end();
-    string first_text = buffer.get_text(first_line_start, first_line_end, false);
-    if (first_text.strip().length == 0) {
-        TextIter second_line_start = first_line_end; if (second_line_start.forward_line()) {
-            TextIter second_line_end = second_line_start; second_line_end.forward_to_line_end();
-            string second_text = buffer.get_text(second_line_start, second_line_end, false);
-            if (second_text.strip().length == 0) {
-                // Supprimer la seconde ligne vide
-                TextIter del_start = second_line_start; TextIter del_end = second_line_end;
-                // Inclure aussi le saut de ligne terminal si possible
-                if (del_end.forward_char()) {
-                    // Reculer d'un si on a dépassé
-                    del_end.backward_char();
-                }
-                buffer.delete(ref del_start, ref del_end);
-            }
-        }
-    }
-    // Fin insertion trait
 }
 
 public void insert_table_object(PivotTable table) {
