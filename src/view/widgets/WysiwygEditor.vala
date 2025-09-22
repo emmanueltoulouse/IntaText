@@ -137,6 +137,32 @@ public WysiwygEditor() {
     // Initialiser les préférences d'indentation
     setup_indentation_preferences();
 
+    // Intercepter Enter juste après une ligne de trait pour éviter d'insérer un nouveau trait
+    var key_controller = new Gtk.EventControllerKey();
+    key_controller.key_pressed.connect((keyval, keycode, state) => {
+        if (keyval == Gdk.Key.Return || keyval == Gdk.Key.KP_Enter) {
+            Gtk.TextIter cur_iter;
+            buffer.get_iter_at_mark(out cur_iter, buffer.get_insert());
+            // On est à la fin d'une ligne de trait (curseur juste après les glyphes)
+            Gtk.TextIter line_start = cur_iter; line_start.set_line_offset(0);
+            Gtk.TextIter line_end = line_start; line_end.forward_to_line_end();
+            string line_text = buffer.get_text(line_start, line_end, false);
+            string stripped = line_text.strip();
+            // Détection d'une ligne existante de trait : uniquement des '─' et assez longue
+            if (stripped.length > 0 && stripped.replace("─", "").strip().length == 0 && stripped.length >= 10) {
+                // Empêcher toute logique d'auto-réécriture et insérer simplement une nouvelle ligne
+                // Si on est déjà à la fin de la ligne, insérer un saut de ligne après
+                if (cur_iter.equal(line_end)) {
+                    buffer.insert(ref cur_iter, "\n", -1);
+                    buffer.place_cursor(cur_iter);
+                    return true; // évite propagation
+                }
+            }
+        }
+        return false;
+    });
+    this.add_controller(key_controller);
+
     // Commenté temporairement
     // buffer.changed.connect(() => {
     //     buffer_changed();
