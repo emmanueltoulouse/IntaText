@@ -1,4 +1,5 @@
 project('IntaText', 'vala', version: '0.1.0',
+    meson_version: '>=0.62.0',
     license: 'GPL-3.0-or-later',
     default_options: [
       'warning_level=3',
@@ -121,6 +122,18 @@ sources = [
 ]
 
 add_project_arguments(['--target-glib=auto'], language: 'vala')
+
+# Activer les warnings de dépréciation GLib / GTK pour faciliter le nettoyage
+# On fixe une base de compatibilité raisonnable (GLib 2.66, GTK 4.0) afin
+# d'afficher les usages obsolètes plus récents.
+add_global_arguments([
+  '-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_66',
+  '-DGTK_VERSION_MIN_REQUIRED=GTK_VERSION_4_0'
+], language: 'c')
+add_project_arguments([
+  '--Xcc=-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_66',
+  '--Xcc=-DGTK_VERSION_MIN_REQUIRED=GTK_VERSION_4_0'
+], language: 'vala')
 
 # Assurez-vous que le compilateur valac puisse trouver les packages
 add_project_arguments(['--pkg=gtk4', '--pkg=libadwaita-1', '--pkg=gee-0.8', '--pkg=gio-2.0'], language: 'vala')
