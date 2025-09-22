@@ -1267,7 +1267,7 @@ private void update_existing_horizontal_rules() {
                 Gtk.TextIter full_line_start = rule_start; full_line_start.set_line_offset(0);
                 Gtk.TextIter full_line_end = full_line_start; full_line_end.forward_to_line_end();
                 buffer.apply_tag(tag_rule_line, full_line_start, full_line_end);
-                if (debug_rules) log_rule_debug(@"Resized existing rule at line ${full_line_start.get_line()} to len=$new_length");
+                if (debug_rules) log_rule_debug("Resized existing rule at line %d to len=%d".printf(full_line_start.get_line(), new_length));
                 // Nettoyer complètement la ligne suivante
                 Gtk.TextIter next_line_start = full_line_end;
                 if (next_line_start.forward_line()) {
@@ -1397,7 +1397,7 @@ public void insert_horizontal_rule() {
 
     // Insérer le trait (pas de saut de ligne ajouté après)
     buffer.insert_with_tags(ref iter, rule_line, -1, tag_rule);
-    if (debug_rules) log_rule_debug(@"Inserted new rule len=$rule_length at line ${iter.get_line()}");
+    if (debug_rules) log_rule_debug("Inserted new rule len=%d at line %d".printf(rule_length, iter.get_line()));
 
     // Appliquer tag neutre sur la ligne complète
     TextIter line_start = iter; line_start.set_line_offset(0);
