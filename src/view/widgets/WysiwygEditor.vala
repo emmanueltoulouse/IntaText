@@ -37,7 +37,6 @@ private Gtk.TextTag tag_underline;
 private Gtk.TextTag tag_image;
 private Gtk.TextTag tag_rule;
 private Gtk.TextTag tag_rule_line; // Tag minimal pour isoler la ligne du trait (éviter fuite attributs)
-private Gtk.TextTag tag_rule_line_locked; // Tag non éditable temporaire pour empêcher scission immédiate
 private Gtk.TextTag tag_table_header;
 private Gtk.TextTag tag_table_cell;
 private Gtk.TextTag tag_table_border;
@@ -155,13 +154,10 @@ public WysiwygEditor() {
 
         // Inclure cas: curseur n'importe où sur la ligne de trait
         if (is_line_full_rule(line_start, line_end)) {
-            // Retirer le verrou si présent
-            buffer.remove_tag(tag_rule_line_locked, line_start, line_end);
             if (!cur_iter.equal(line_end)) cur_iter = line_end;
             buffer.insert(ref cur_iter, "\n", -1);
             buffer.place_cursor(cur_iter);
             suppress_next_rule_insert = true;
-            Idle.add(() => { deduplicate_adjacent_rules(); return false; });
             return true;
         }
         return false;
@@ -321,12 +317,6 @@ private void ensure_tags() {
     tag_rule_line = (Gtk.TextTag) table.lookup("rule_line");
     if (tag_rule_line == null) {
         tag_rule_line = buffer.create_tag("rule_line"); // neutre
-    }
-    // Tag ligne de trait verrouillée (non éditable) pour empêcher scission immédiate par Enter
-    tag_rule_line_locked = (Gtk.TextTag) table.lookup("rule_line_locked");
-    if (tag_rule_line_locked == null) {
-        tag_rule_line_locked = buffer.create_tag("rule_line_locked",
-                                                "editable", false);
     }
 
     // Table header (en-têtes grisés)
@@ -1377,10 +1367,10 @@ public void insert_horizontal_rule() {
     // Insérer le trait (pas de saut de ligne ajouté après)
     buffer.insert_with_tags(ref iter, rule_line, -1, tag_rule);
 
-    // Appliquer tag verrouillé (non éditable) sur la ligne complète pour empêcher scission Enter
+    // Appliquer tag neutre sur la ligne complète
     TextIter line_start = iter; line_start.set_line_offset(0);
     TextIter line_end = line_start; line_end.forward_to_line_end();
-    buffer.apply_tag(tag_rule_line_locked, line_start, line_end);
+    buffer.apply_tag(tag_rule_line, line_start, line_end);
 
     // Stratégie de visibilité du curseur:
     // - Mettre le curseur juste avant le dernier glyph pour qu'il soit clairement visible
@@ -1399,27 +1389,6 @@ public void insert_horizontal_rule() {
     suppress_next_rule_insert = true;
 }
 
-// Supprime les doublons consécutifs de lignes de trait (garde la première)
-private void deduplicate_adjacent_rules() {
-    int total = buffer.get_line_count();
-    for (int li = 0; li < total - 1; li++) {
-        Gtk.TextIter ls1; buffer.get_iter_at_line(out ls1, li);
-        Gtk.TextIter le1 = ls1; le1.forward_to_line_end();
-        Gtk.TextIter ls2; buffer.get_iter_at_line(out ls2, li + 1);
-        Gtk.TextIter le2 = ls2; le2.forward_to_line_end();
-        if (is_line_full_rule(ls1, le1) && is_line_full_rule(ls2, le2)) {
-            Gtk.TextIter del_start = ls2;
-            Gtk.TextIter del_end = le2;
-            Gtk.TextIter tmp = del_end;
-            if (tmp.forward_char()) del_end = tmp; // inclure newline
-            buffer.begin_user_action();
-            buffer.delete(ref del_start, ref del_end);
-            buffer.end_user_action();
-            total = buffer.get_line_count();
-            li--; // réévaluer
-        }
-    }
-}
 
 public void insert_table_object(PivotTable table) {
     ensure_tags();
