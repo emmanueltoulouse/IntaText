@@ -140,24 +140,23 @@ public WysiwygEditor() {
     // Intercepter Enter juste après une ligne de trait pour éviter d'insérer un nouveau trait
     var key_controller = new Gtk.EventControllerKey();
     key_controller.key_pressed.connect((keyval, keycode, state) => {
-        if (keyval == Gdk.Key.Return || keyval == Gdk.Key.KP_Enter) {
-            Gtk.TextIter cur_iter;
-            buffer.get_iter_at_mark(out cur_iter, buffer.get_insert());
-            // On est à la fin d'une ligne de trait (curseur juste après les glyphes)
-            Gtk.TextIter line_start = cur_iter; line_start.set_line_offset(0);
-            Gtk.TextIter line_end = line_start; line_end.forward_to_line_end();
-            string line_text = buffer.get_text(line_start, line_end, false);
-            string stripped = line_text.strip();
-            // Détection d'une ligne existante de trait : uniquement des '─' et assez longue
-            if (stripped.length > 0 && stripped.replace("─", "").strip().length == 0 && stripped.length >= 10) {
-                // Empêcher toute logique d'auto-réécriture et insérer simplement une nouvelle ligne
-                // Si on est déjà à la fin de la ligne, insérer un saut de ligne après
-                if (cur_iter.equal(line_end)) {
-                    buffer.insert(ref cur_iter, "\n", -1);
-                    buffer.place_cursor(cur_iter);
-                    return true; // évite propagation
-                }
+        if (keyval != Gdk.Key.Return && keyval != Gdk.Key.KP_Enter)
+            return false;
+
+        Gtk.TextIter cur_iter;
+        buffer.get_iter_at_mark(out cur_iter, buffer.get_insert());
+        Gtk.TextIter line_start = cur_iter; line_start.set_line_offset(0);
+        Gtk.TextIter line_end = line_start; line_end.forward_to_line_end();
+
+        // Inclure cas: curseur n'importe où sur la ligne de trait
+        if (is_line_full_rule(line_start, line_end)) {
+            // Force placement curseur à fin de ligne avant insertion pour éviter scission
+            if (!cur_iter.equal(line_end)) {
+                cur_iter = line_end;
             }
+            buffer.insert(ref cur_iter, "\n", -1);
+            buffer.place_cursor(cur_iter);
+            return true; // consomme l'événement
         }
         return false;
     });
@@ -1259,6 +1258,17 @@ private void update_existing_horizontal_rules() {
         // Continuer la recherche depuis la fin du match actuel
         start_iter = match_end;
     }
+}
+
+// Détermine si la ligne comprise entre line_start et line_end est une ligne de trait (suite de '─')
+private bool is_line_full_rule(Gtk.TextIter line_start, Gtk.TextIter line_end) {
+    string line_text = buffer.get_text(line_start, line_end, false);
+    string stripped = line_text.strip();
+    if (stripped.length < 5) return false; // longueur mini
+    // Vérifier uniquement des '─'
+    // Remplacement: enlever tous les glyphes '─'; si plus rien => homogène
+    if (stripped.replace("─", "").strip().length == 0) return true;
+    return false;
 }
 
 // Calcule la largeur optimale pour un trait horizontal en fonction de la taille du widget
