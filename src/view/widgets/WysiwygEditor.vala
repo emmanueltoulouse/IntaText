@@ -42,6 +42,10 @@ private Gtk.TextTag tag_table_cell;
 private Gtk.TextTag tag_table_border;
 // Flag pour empêcher une réinsertion immédiate de trait lors d'un Enter après création.
 private bool suppress_next_rule_insert = false;
+// Debug: activation logs internes (contrôlé par variable d'env INTATEXT_DEBUG_RULES)
+private bool debug_rules = false;
+// Désactivation dynamique du recalcul de la largeur des traits (INTATEXT_DISABLE_RULE_RESIZE=1)
+private bool disable_rule_resize = false;
 
 // Variable pour mémoriser la dernière largeur calculée pour les traits
 private int last_calculated_rule_length = 0;
@@ -112,6 +116,12 @@ public WysiwygEditor() {
     // Préparer les tags de formatage
     ensure_tags();
 
+    // Initialiser flags debug depuis l'environnement (évalués une fois)
+    string? dbg = GLib.Environment.get_variable("INTATEXT_DEBUG_RULES");
+    if (dbg != null && (dbg == "1" || dbg.down() == "true")) debug_rules = true;
+    string? dis = GLib.Environment.get_variable("INTATEXT_DISABLE_RULE_RESIZE");
+    if (dis != null && (dis == "1" || dis.down() == "true")) disable_rule_resize = true;
+
     // Gestionnaire pour appliquer les attributs en attente lors de la saisie
     buffer.insert_text.connect((ref iter, text, len) => {
         if (has_pending_attributes) {
@@ -154,10 +164,12 @@ public WysiwygEditor() {
 
         // Inclure cas: curseur n'importe où sur la ligne de trait
         if (is_line_full_rule(line_start, line_end)) {
+            if (debug_rules) log_rule_debug("ENTER on rule line: line=" + line_start.get_line().to_string());
             if (!cur_iter.equal(line_end)) cur_iter = line_end;
             buffer.insert(ref cur_iter, "\n", -1);
             buffer.place_cursor(cur_iter);
             suppress_next_rule_insert = true;
+            if (debug_rules) log_rule_debug("Inserted newline after rule; suppress_next_rule_insert set");
             return true;
         }
         return false;
@@ -1127,6 +1139,11 @@ public void insert_table(int rows, int cols) {
 
 // Gestionnaire de redimensionnement pour mettre à jour les traits horizontaux
 private void on_size_changed() {
+    if (disable_rule_resize) {
+        if (debug_rules) log_rule_debug("on_size_changed skipped (dynamic resize disabled)");
+        return;
+    }
+    if (debug_rules) log_rule_debug("on_size_changed triggered: width=" + this.get_width().to_string());
     update_existing_horizontal_rules();
 }
 
@@ -1144,14 +1161,21 @@ private void update_existing_horizontal_rules() {
     // S'assurer que les tags sont créés
     ensure_tags();
 
+    if (disable_rule_resize) {
+        if (debug_rules) log_rule_debug("update_existing_horizontal_rules skipped (dynamic resize disabled)");
+        return;
+    }
+
     // Calculer la nouvelle longueur
     int new_length = calculate_rule_length();
 
     // Si la longueur n'a pas changé d'au moins 1 caractère, ne pas mettre à jour
     if (last_calculated_rule_length > 0 && (new_length - last_calculated_rule_length).abs() < 1) {
+        if (debug_rules) log_rule_debug(@"No significant rule length change (old=$last_calculated_rule_length new=$new_length)");
         return;
     }
 
+    if (debug_rules) log_rule_debug(@"Rule length updated from $last_calculated_rule_length to $new_length");
     last_calculated_rule_length = new_length;
 
     // Créer le texte du trait cible
@@ -1177,6 +1201,7 @@ private void update_existing_horizontal_rules() {
             buffer.delete(ref s, ref e);
             // Réinsérer à la position de début de ligne
             buffer.insert_with_tags(ref s, rule_text.str, -1, tag_rule);
+            if (debug_rules) log_rule_debug(@"Normalized MD HR at line $li to unicode rule (len=$new_length)");
         }
     }
     buffer.end_user_action();
@@ -1242,6 +1267,7 @@ private void update_existing_horizontal_rules() {
                 Gtk.TextIter full_line_start = rule_start; full_line_start.set_line_offset(0);
                 Gtk.TextIter full_line_end = full_line_start; full_line_end.forward_to_line_end();
                 buffer.apply_tag(tag_rule_line, full_line_start, full_line_end);
+                if (debug_rules) log_rule_debug(@"Resized existing rule at line ${full_line_start.get_line()} to len=$new_length");
                 // Nettoyer complètement la ligne suivante
                 Gtk.TextIter next_line_start = full_line_end;
                 if (next_line_start.forward_line()) {
@@ -1341,6 +1367,7 @@ public void insert_horizontal_rule() {
     ensure_tags();
     if (suppress_next_rule_insert) {
         suppress_next_rule_insert = false; // consomme le flag sans insérer
+        if (debug_rules) log_rule_debug("Suppressed rule insertion due to flag");
         return;
     }
     // Obtenir la position actuelle du curseur
@@ -1354,6 +1381,10 @@ public void insert_horizontal_rule() {
 
     // Calculer la largeur optimale
     int rule_length = calculate_rule_length();
+    if (disable_rule_resize) {
+        // Si désactivé, figer à la dernière valeur connue (sinon calcul initial)
+        if (last_calculated_rule_length > 0) rule_length = last_calculated_rule_length;
+    }
     if (rule_length < 30) rule_length = 30;
     if (rule_length > 180) rule_length = 180;
     int rem = rule_length % 3;
@@ -1366,6 +1397,7 @@ public void insert_horizontal_rule() {
 
     // Insérer le trait (pas de saut de ligne ajouté après)
     buffer.insert_with_tags(ref iter, rule_line, -1, tag_rule);
+    if (debug_rules) log_rule_debug(@"Inserted new rule len=$rule_length at line ${iter.get_line()}");
 
     // Appliquer tag neutre sur la ligne complète
     TextIter line_start = iter; line_start.set_line_offset(0);
@@ -1387,6 +1419,24 @@ public void insert_horizontal_rule() {
     }
     // Marquer suppression prochaine insertion (si Enter immédiat)
     suppress_next_rule_insert = true;
+}
+
+// --- Logging utilitaire pour diagnostics règles ---
+private void log_rule_debug(string msg) {
+    // Préfixer avec horodatage simple + compteur règles
+    int count = count_rule_lines();
+    GLib.message("[RULEDBG] (rules=" + count.to_string() + ") " + msg);
+}
+
+private int count_rule_lines() {
+    int total = buffer.get_line_count();
+    int count = 0;
+    for (int li = 0; li < total; li++) {
+        Gtk.TextIter ls; buffer.get_iter_at_line(out ls, li);
+        Gtk.TextIter le = ls; le.forward_to_line_end();
+        if (is_line_full_rule(ls, le)) count++;
+    }
+    return count;
 }
 
 
