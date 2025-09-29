@@ -4,5 +4,6 @@
     <file>icons/hicolor/scalable/apps/com.cabineteto.IntaText.png</file>
     <file>style.css</file>
     <file>explorer-style.css</file>
+    <file>icons/star-symbolic.svg</file>
   </gresource>
 </gresources>

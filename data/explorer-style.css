@@ -201,7 +201,6 @@
     background-color: alpha(#ddd, 0.3);
     padding: 0 5px;
     border-right: 1px solid #ccc;
-    user-select: none;
 }
 
 .diff-stats {
@@ -253,4 +252,9 @@
 .filter-active {
     background-color: alpha(#3584e4, 0.15);
     border-radius: 4px;
+}
+
+/* Icône étoile des favoris (symbolic) en bleu */
+.favorite-star {
+    color: #3584e4;
 }

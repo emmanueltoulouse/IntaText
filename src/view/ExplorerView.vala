@@ -423,21 +423,43 @@ private void create_file_list() {
 
                 // Mettre à jour l'icône
                 if (icon != null && file_item != null) {
-                    if (file_item.icon != null) {
+                    // Icône spéciale pour les favoris: étoile symbolique (colorée via CSS)
+                    if (special == "favorite") {
+                        // Essayer plusieurs noms d'icônes symboliques selon le thème, sinon repli ressource
+                        var theme = Gtk.IconTheme.get_for_display(icon.get_display());
+                        string[] candidates = { "starred-symbolic", "emblem-favorite-symbolic", "favorite-symbolic", "star-symbolic" };
+                        bool set_ok = false;
+                        foreach (var name in candidates) {
+                            var found = theme.lookup_icon(name, null, 16, 1, Gtk.TextDirection.LTR, Gtk.IconLookupFlags.FORCE_SYMBOLIC);
+                            if (found != null) {
+                                icon.set_from_icon_name(name);
+                                set_ok = true;
+                                break;
+                            }
+                        }
+                        if (!set_ok) {
+                            icon.set_from_resource("/com/cabineteto/IntaText/icons/star-symbolic.svg");
+                        }
+                        icon.add_css_class("favorite-star");
+                    }
+                    else if (file_item.icon != null) {
                         icon.set_from_gicon(file_item.icon);
+                        icon.remove_css_class("favorite-star");
                     }
                     else if (file_item.is_directory()) {
                         icon.set_from_icon_name("folder");
+                        icon.remove_css_class("favorite-star");
                     }
                     else {
                         icon.set_from_icon_name("text-x-generic");
+                        icon.remove_css_class("favorite-star");
                     }
                 }
 
-                // Mettre à jour le nom (★ pour favoris)
+                // Mettre à jour le nom (sans étoile préfixée pour les favoris)
                 if (name_label != null && file_item != null) {
                     string display = file_item.name;
-                    if (special == "favorite") display = "★ " + display;
+                    // Ne pas préfixer par une étoile, l'icône suffit
                     if (file_item.is_directory()) {
                         name_label.set_markup("<b>" + GLib.Markup.escape_text(display) + "</b>");
                     }
@@ -596,14 +618,17 @@ private void refresh_directory_content() {
     // Mettre à jour la liste
     list_store.remove_all();
 
-    // Injecter les favoris (si modèle disponible)
+    // Injecter les favoris (si modèle disponible) et créer un set pour la déduplication
+    Gee.HashSet<string> favorite_paths = new Gee.HashSet<string>();
     if (model != null) {
         var favorites_files = model.get_bookmarks();
         foreach (var fav in favorites_files) {
             try {
-                var info = fav.query_info("standard::*,time::modified,unix::mode", FileQueryInfoFlags.NONE);
                 var path = fav.get_path();
-                if (path == null) continue; // ignorer non-local ici
+                if (path == null || path == "") continue; // ignorer non-local ici
+                favorite_paths.add(path);
+
+                var info = fav.query_info("standard::*,time::modified,unix::mode", FileQueryInfoFlags.NONE);
                 var fitem = new FileItemModel.from_file_info(path, info);
                 fitem.set_metadata("special", "favorite");
                 list_store.append(fitem);
@@ -633,7 +658,10 @@ private void refresh_directory_content() {
         if (!item.is_hidden) {
             // Appliquer le filtre d'extension
             if (should_show_item(item)) {
-                list_store.append(item);
+                // Dédupliquer: ne pas ré-afficher un favori dans la liste normale
+                if (!favorite_paths.contains(item.path)) {
+                    list_store.append(item);
+                }
             }
         }
     }
@@ -1011,24 +1039,44 @@ private void on_bind_listitem(Object object) {
 
     // Mettre à jour l'icône
     if (icon != null) {
-        if (file_item.icon != null) {
+        // Icône spéciale pour les favoris: étoile symbolique
+        if (file_item.get_metadata("special") == "favorite") {
+            // Essayer plusieurs noms d'icônes symboliques selon le thème, sinon repli ressource
+            var theme = Gtk.IconTheme.get_for_display(icon.get_display());
+            string[] candidates = { "starred-symbolic", "emblem-favorite-symbolic", "favorite-symbolic", "star-symbolic" };
+            bool set_ok = false;
+            foreach (var name in candidates) {
+                var found = theme.lookup_icon(name, null, 16, 1, Gtk.TextDirection.LTR, Gtk.IconLookupFlags.FORCE_SYMBOLIC);
+                if (found != null) {
+                    icon.set_from_icon_name(name);
+                    set_ok = true;
+                    break;
+                }
+            }
+            if (!set_ok) {
+                icon.set_from_resource("/com/cabineteto/IntaText/icons/star-symbolic.svg");
+            }
+            icon.add_css_class("favorite-star");
+        }
+        else if (file_item.icon != null) {
             icon.set_from_gicon(file_item.icon);
+            icon.remove_css_class("favorite-star");
         }
         else if (file_item.is_directory()) {
             icon.set_from_icon_name("folder");
+            icon.remove_css_class("favorite-star");
         }
         else {
             icon.set_from_icon_name("text-x-generic");
+            icon.remove_css_class("favorite-star");
         }
     }
 
-    // Mettre à jour le nom (ajoute une étoile pour les favoris)
+    // Mettre à jour le nom (ne pas ajouter d'étoile en préfixe)
     if (name_label != null) {
         string display = file_item.name ?? "";
         bool is_dir = file_item.is_directory();
-        if (special == "favorite") {
-            display = "★ " + display;
-        }
+        // Pas d'étoile textuelle
         if (is_dir) {
             name_label.set_markup("<b>" + GLib.Markup.escape_text(display) + "</b>");
         } else {
@@ -1459,11 +1507,13 @@ private void load_directory_content() {
         list_store.remove_all();
 
         // 1) Injecter les favoris (dossiers uniquement) avec un marqueur spécial
+        Gee.HashSet<string> favorite_paths = new Gee.HashSet<string>();
         foreach (var fav in favorites_files) {
             try {
                 var info = fav.query_info("standard::*,time::modified,unix::mode", FileQueryInfoFlags.NONE);
                 var path = fav.get_path();
                 if (path == null) continue; // ignorer URI non locaux pour cette vue
+                favorite_paths.add(path);
                 var item = new FileItemModel.from_file_info(path, info);
                 item.set_metadata("special", "favorite");
                 list_store.append(item);
@@ -1484,7 +1534,10 @@ private void load_directory_content() {
 
         // 3) Éléments normaux du dossier
         foreach (var item in items) {
-            list_store.append(item);
+            // Dédupliquer: ne pas ré-afficher un favori dans la liste normale
+            if (!favorite_paths.contains(item.path)) {
+                list_store.append(item);
+            }
         }
         // Le FilterListModel se mettra à jour automatiquement.
     }

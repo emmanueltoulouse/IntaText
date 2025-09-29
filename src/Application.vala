@@ -89,12 +89,26 @@ private void load_css() {
                     /* Autres styles existants... */
                 """);
 
-        // Appliquer le CSS
+        // Appliquer le CSS en mémoire
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(),
             css_provider,
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             );
+
+        // Charger et appliquer la feuille de style embarquée de l'explorateur (ex: .favorite-star)
+        // Elle est packagée via GResource: /com/cabineteto/IntaText/explorer-style.css
+        try {
+            var explorer_css = new Gtk.CssProvider();
+            explorer_css.load_from_resource("/com/cabineteto/IntaText/explorer-style.css");
+            Gtk.StyleContext.add_provider_for_display(
+                Gdk.Display.get_default(),
+                explorer_css,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            );
+        } catch (Error e2) {
+            warning("Impossible de charger explorer-style.css: %s", e2.message);
+        }
 
         // trace supprimée
     } catch (Error e) {

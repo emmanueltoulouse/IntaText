@@ -105,7 +105,7 @@
 				"clear": true
 			}
 		},
-		{
+fait		{
 			"label": "Compil et Execute",
 			"detail": "Compile et lance l'application",
 			"icon": {
