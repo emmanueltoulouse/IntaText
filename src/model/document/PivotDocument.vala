@@ -333,6 +333,9 @@ public class PivotParagraph : PivotNode {
 // Au lieu d'un simple string, on a maintenant une liste de segments
 public Gee.List<TextSegment> segments = new Gee.ArrayList<TextSegment>();
 
+// Niveau d'indentation (0 = pas d'indentation)
+public int indent_level = 0;
+
 // Propriété virtuelle pour compatibilité avec le code existant
 public string text {
     owned get {

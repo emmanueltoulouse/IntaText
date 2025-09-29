@@ -11,6 +11,18 @@
       </description>
     </key>
 
+    <key name="indentation-mode" type="s">
+      <default>'margin-tags'</default>
+      <summary>Mode d'indentation</summary>
+      <description>
+        Contrôle le type d'indentation utilisé dans l'éditeur:
+        - 'none': Pas d'indentation
+        - 'spaces': Indentation par espaces
+        - 'margin-tags': Indentation visuelle avec tags de marge
+        - 'rtf-format': Format enrichi (RTF)
+      </description>
+    </key>
+
     <!-- Configuration des plugins -->
     <key name="plugin-enabled-list" type="as">
       <default>[]</default>
@@ -34,6 +46,17 @@
       <default>''</default>
       <summary>Répertoire utilisateur des plugins</summary>
       <description>Répertoire personnalisé pour les plugins utilisateur (vide = répertoire par défaut)</description>
+    </key>
+
+    <!-- Largeur minimale de contenu de l'éditeur (en pixels) -->
+    <key name="editor-min-content-width" type="i">
+      <default>800</default>
+      <summary>Largeur minimale du contenu de l’éditeur</summary>
+      <description>
+        Largeur minimale en pixels de la zone de contenu de l’éditeur. Si la fenêtre
+        est plus étroite que cette valeur, une barre de défilement horizontale peut
+        apparaître pour préserver la lisibilité d’éléments larges (titres, tableaux, images).
+      </description>
     </key>
   </schema>
 

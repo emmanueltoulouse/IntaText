@@ -489,46 +489,46 @@ private void create_file_list() {
  */
 private void create_sort_popover() {
     if (sort_popover != null) return; // Déjà créé
-    
+
     // Créer le contenu du popover
     var box = new Box(Orientation.VERTICAL, 6);
     box.set_margin_start(12);
     box.set_margin_end(12);
     box.set_margin_top(12);
     box.set_margin_bottom(12);
-    
+
     // Titre
     var title_label = new Label("Trier par");
     title_label.add_css_class("heading");
     box.append(title_label);
-    
+
     // Créer les boutons radio
     CheckButton? first_button = null;
-    
+
     // Date décroissante (par défaut)
     var date_desc_button = new CheckButton.with_label("Date (récent en premier)");
     date_desc_button.set_active(model != null && model.current_sort_type == SortType.DATE_DESC);
     first_button = date_desc_button;
     box.append(date_desc_button);
-    
+
     // Date croissante
     var date_asc_button = new CheckButton.with_label("Date (ancien en premier)");
     date_asc_button.set_group(date_desc_button);
     date_asc_button.set_active(model != null && model.current_sort_type == SortType.DATE_ASC);
     box.append(date_asc_button);
-    
+
     // Alphabétique
     var alpha_button = new CheckButton.with_label("Nom (alphabétique)");
     alpha_button.set_group(date_desc_button);
     alpha_button.set_active(model != null && model.current_sort_type == SortType.ALPHABETICAL);
     box.append(alpha_button);
-    
+
     // Extension
     var ext_button = new CheckButton.with_label("Extension");
     ext_button.set_group(date_desc_button);
     ext_button.set_active(model != null && model.current_sort_type == SortType.EXTENSION);
     box.append(ext_button);
-    
+
     // Connecter les signaux
     date_desc_button.toggled.connect(() => {
         if (date_desc_button.get_active() && model != null) {
@@ -537,7 +537,7 @@ private void create_sort_popover() {
             sort_popover.popdown();
         }
     });
-    
+
     date_asc_button.toggled.connect(() => {
         if (date_asc_button.get_active() && model != null) {
             model.current_sort_type = SortType.DATE_ASC;
@@ -545,7 +545,7 @@ private void create_sort_popover() {
             sort_popover.popdown();
         }
     });
-    
+
     alpha_button.toggled.connect(() => {
         if (alpha_button.get_active() && model != null) {
             model.current_sort_type = SortType.ALPHABETICAL;
@@ -553,7 +553,7 @@ private void create_sort_popover() {
             sort_popover.popdown();
         }
     });
-    
+
     ext_button.toggled.connect(() => {
         if (ext_button.get_active() && model != null) {
             model.current_sort_type = SortType.EXTENSION;
@@ -561,7 +561,7 @@ private void create_sort_popover() {
             sort_popover.popdown();
         }
     });
-    
+
     // Créer le popover
     sort_popover = new Popover();
     sort_popover.set_parent(sort_button);

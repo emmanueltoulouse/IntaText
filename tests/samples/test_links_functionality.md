@@ -7,7 +7,7 @@ Ce fichier permet de tester les nouvelles interactions avec les liens HTTP dans 
 Voici quelques liens pour tester les nouvelles fonctionnalités :
 
 - **Lien simple** : https://www.google.com
-- **Autre lien** : https://github.com
+- **Autre lien** : https://github.com 
 - **Lien avec texte** : [Mozilla Developer Network](https://developer.mozilla.org)
 - **Lien FTP** : ftp://example.com/files
 - **Email** : mailto:contact@example.com

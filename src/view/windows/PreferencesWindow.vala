@@ -307,6 +307,55 @@ private void add_page_editor() {
     markdown_group.add(md_heading_row);
 
     editor_page.add(markdown_group);
+
+    // Groupe Indentation
+    var indentation_group = new Adw.PreferencesGroup();
+    indentation_group.set_title(_("Indentation"));
+    indentation_group.set_description(_("Configuration de l'indentation des paragraphes"));
+
+    // Lecture de la configuration actuelle
+    string current_indent_mode = md_settings.get_string("indentation-mode");
+
+    // Bouton radio "Pas d'indentation"
+    var none_row = new Adw.ActionRow();
+    none_row.set_title(_("Pas d'indentation"));
+    none_row.set_subtitle(_("Aucune indentation appliquée"));
+    var none_radio = new Gtk.CheckButton();
+    none_radio.set_active(current_indent_mode == "none");
+    none_row.add_prefix(none_radio);
+    indentation_group.add(none_row);
+
+    // Bouton radio "Espaces"
+    var spaces_row = new Adw.ActionRow();
+    spaces_row.set_title(_("Espaces"));
+    spaces_row.set_subtitle(_("Utilise des espaces pour l'indentation"));
+    var spaces_radio = new Gtk.CheckButton();
+    spaces_radio.set_group(none_radio);
+    spaces_radio.set_active(current_indent_mode == "spaces");
+    spaces_row.add_prefix(spaces_radio);
+    indentation_group.add(spaces_row);
+
+    // Bouton radio "Marge visuelle" (par défaut)
+    var margin_row = new Adw.ActionRow();
+    margin_row.set_title(_("Marge visuelle (Tags)"));
+    margin_row.set_subtitle(_("Utilise les propriétés de marge GTK"));
+    var margin_radio = new Gtk.CheckButton();
+    margin_radio.set_group(none_radio);
+    margin_radio.set_active(current_indent_mode == "margin-tags" || current_indent_mode == "");
+    margin_row.add_prefix(margin_radio);
+    indentation_group.add(margin_row);
+
+    // Bouton radio "Format enrichi"
+    var rtf_row = new Adw.ActionRow();
+    rtf_row.set_title(_("Format enrichi (RTF)"));
+    rtf_row.set_subtitle(_("Compatible avec les formats RTF"));
+    var rtf_radio = new Gtk.CheckButton();
+    rtf_radio.set_group(none_radio);
+    rtf_radio.set_active(current_indent_mode == "rtf-format");
+    rtf_row.add_prefix(rtf_radio);
+    indentation_group.add(rtf_row);
+
+    editor_page.add(indentation_group);
     add(editor_page);
 
     // Connecter les signaux
@@ -324,6 +373,31 @@ private void add_page_editor() {
     md_heading_dropdown.notify["selected"].connect(() => {
                 var sel = (int) md_heading_dropdown.get_selected();
                 md_settings.set_string("markdown-heading-style", sel == 1 ? "setext" : "atx");
+            });
+
+    // Persister le type d'indentation dans GSettings avec les boutons radio
+    none_radio.notify["active"].connect(() => {
+                if (none_radio.active) {
+                    md_settings.set_string("indentation-mode", "none");
+                }
+            });
+
+    spaces_radio.notify["active"].connect(() => {
+                if (spaces_radio.active) {
+                    md_settings.set_string("indentation-mode", "spaces");
+                }
+            });
+
+    margin_radio.notify["active"].connect(() => {
+                if (margin_radio.active) {
+                    md_settings.set_string("indentation-mode", "margin-tags");
+                }
+            });
+
+    rtf_radio.notify["active"].connect(() => {
+                if (rtf_radio.active) {
+                    md_settings.set_string("indentation-mode", "rtf-format");
+                }
             });
 }
 
@@ -422,6 +496,17 @@ private void add_page_display() {
     size_row.add_suffix(size_spin);
     editor_group.add(size_row);
 
+    // Largeur minimale du contenu de l'éditeur (GSettings)
+    var minw_row = new Adw.ActionRow();
+    minw_row.set_title(_("Largeur minimale du contenu (px)"));
+    var minw_spin = new Gtk.SpinButton.with_range(200, 2000, 10);
+    var ui_settings = new GLib.Settings("com.cabineteto.IntaText");
+    int minw_ini = ui_settings.get_int("editor-min-content-width");
+    if (minw_ini < 200) minw_ini = 800; // fallback sensé
+    minw_spin.set_value(minw_ini);
+    minw_row.add_suffix(minw_spin);
+    editor_group.add(minw_row);
+
     // Sélecteur de couleur
     var color_row = new Adw.ActionRow();
     color_row.set_title(_("Couleur du texte"));
@@ -470,6 +555,11 @@ private void add_page_display() {
                 config.set_integer("Editor", "font_size", size);
                 config.save();
                 controller.apply_editor_style_from_preferences();
+            });
+    minw_spin.value_changed.connect(() => {
+                int w = (int)minw_spin.get_value();
+                if (w < 200) w = 200;
+                ui_settings.set_int("editor-min-content-width", w);
             });
     color_button.color_set.connect(() => {
                 Gdk.RGBA color = color_button.get_rgba();

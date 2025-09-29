@@ -1,4 +1,12 @@
 private class PreferencesWindow : Adw.PreferencesWindow {
+
+public PreferencesWindow() {
+    Object();
+    set_title("Préférences");
+    add_page_general();
+    add_page_editor();
+}
+
 private void add_page_general() {
     var general_page = new Adw.PreferencesPage();
     general_page.set_title(_("Général"));
@@ -129,6 +137,61 @@ private void add_page_general() {
     general_group.add(md_heading_row);
     general_page.add(general_group);
     this.add(general_page);
+}
+
+private void add_page_editor() {
+    var editor_page = new Adw.PreferencesPage();
+    editor_page.set_title(_("Éditeur"));
+    editor_page.set_icon_name("applications-graphics-symbolic");
+
+    var editor_group = new Adw.PreferencesGroup();
+    editor_group.set_title(_("Indentation"));
+
+    // Type d'indentation
+    var indentation_row = new Adw.ActionRow();
+    indentation_row.set_title(_("Type d'indentation"));
+    indentation_row.set_subtitle(_("Choisissez comment gérer l'indentation des lignes"));
+    var indentation_list = new Gtk.StringList({
+        "Pas d'indentation",
+        "Espaces",
+        "Marge visuelle (Tags)",
+        "Format enrichi (RTF)"
+    });
+    var indentation_dropdown = new Gtk.DropDown(indentation_list, null);
+    indentation_row.add_suffix(indentation_dropdown);
+    indentation_row.set_activatable_widget(indentation_dropdown);
+
+    // Liaison GSettings
+    try {
+        var settings = new GLib.Settings("com.cabineteto.IntaText");
+        string val = settings.get_string("indentation-mode");
+        uint idx = 0;
+        switch (val) {
+            case "none": idx = 0; break;
+            case "spaces": idx = 1; break;
+            case "margin-tags": idx = 2; break;
+            case "rtf-format": idx = 3; break;
+            default: idx = 2; break; // Par défaut: margin-tags
+        }
+        indentation_dropdown.set_selected(idx);
+        indentation_dropdown.notify["selected"].connect(() => {
+            var selected = indentation_dropdown.get_selected();
+            string v = "margin-tags";
+            switch (selected) {
+                case 0: v = "none"; break;
+                case 1: v = "spaces"; break;
+                case 2: v = "margin-tags"; break;
+                case 3: v = "rtf-format"; break;
+            }
+            settings.set_string("indentation-mode", v);
+        });
+    } catch (Error e) {
+        // Ignore: fallback UI sans persistance
+    }
+
+    editor_group.add(indentation_row);
+    editor_page.add(editor_group);
+    this.add(editor_page);
 }
 // Exemple d'utilisation d'un toast après une action réussie ou en erreur :
 private void show_toast_success(string message) {

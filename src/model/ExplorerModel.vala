@@ -793,10 +793,10 @@ public Gee.ArrayList<FileItemModel> get_directory_content(string path) {
         foreach (var item in cached_items) {
             items_copy.add(item);
         }
-        
+
         // Re-trier les éléments selon les préférences actuelles
         sort_file_items(items_copy);
-        
+
         // Mettre à jour les emplacements récents quand même
         add_to_recent_locations(path);
         return items_copy;
@@ -1284,16 +1284,16 @@ private void sort_file_items(Gee.ArrayList<FileItemModel> items) {
         // 1. Les favoris d'abord
         bool a_is_favorite = favorites.contains(a.path);
         bool b_is_favorite = favorites.contains(b.path);
-        
+
         if (a_is_favorite && !b_is_favorite) return -1;
         if (!a_is_favorite && b_is_favorite) return 1;
-        
+
         // 2. Puis les dossiers (sauf s'ils sont favoris, déjà gérés)
         if (!a_is_favorite && !b_is_favorite) {
             if (a.is_directory() && !b.is_directory()) return -1;
             if (!a.is_directory() && b.is_directory()) return 1;
         }
-        
+
         // 3. Enfin, tri des fichiers selon le type sélectionné
         return compare_files_by_sort_type(a, b, _current_sort_type);
     });
@@ -1307,15 +1307,15 @@ private int compare_files_by_sort_type(FileItemModel a, FileItemModel b, SortTyp
         case SortType.DATE_DESC:
             // Date de modification décroissante (plus récent en premier)
             return b.modified_time.compare(a.modified_time);
-            
+
         case SortType.DATE_ASC:
             // Date de modification croissante (plus ancien en premier)
             return a.modified_time.compare(b.modified_time);
-            
+
         case SortType.ALPHABETICAL:
             // Ordre alphabétique par nom
             return a.name.collate(b.name);
-            
+
         case SortType.EXTENSION:
             // Tri par extension, puis par nom
             string a_ext = a.get_extension();
@@ -1323,7 +1323,7 @@ private int compare_files_by_sort_type(FileItemModel a, FileItemModel b, SortTyp
             int ext_cmp = a_ext.collate(b_ext);
             if (ext_cmp != 0) return ext_cmp;
             return a.name.collate(b.name); // Même extension, trier par nom
-            
+
         default:
             return a.name.collate(b.name);
     }

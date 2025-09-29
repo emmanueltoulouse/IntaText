@@ -11,7 +11,7 @@ Ce fichier permet de tester l'insertion d'images de différentes tailles dans l'
 ### Images disponibles pour test :
 
 - **test-image.png** : Petite image (48x48 pixels) - devrait être agrandie à ~80x80px
-- **test-image-large.png** : Grande image (1024x1024 pixels) - devrait être réduite à 400x400px
+- **test-image-large.png** : Grande image (1024x1024 pixels) - devrait être réduite à 400x400px  
 - **test.png** : Grande image (1024x1024 pixels) - devrait être réduite à 400x400px
 
 ### Résultat attendu :
