@@ -50,6 +50,9 @@ private bool disable_rule_resize = false;
 // Variable pour mémoriser la dernière largeur calculée pour les traits
 private int last_calculated_rule_length = 0;
 
+// Variable pour tracker le TextView actif dans une cellule de tableau
+private weak Gtk.TextView? active_cell_textview = null;
+
 private Gtk.CssProvider css_provider;
 // Registre local des noms de tags dynamiques créés (pour retrouver href/src/alt)
 private Gee.ArrayList<string> link_tag_names = new Gee.ArrayList<string>();
@@ -177,6 +180,14 @@ public WysiwygEditor() {
         return false;
     });
     this.add_controller(key_controller);
+
+    // Ajouter un gestionnaire de focus pour l'éditeur principal
+    // pour réinitialiser active_cell_textview quand on revient éditer le document principal
+    var main_focus_controller = new Gtk.EventControllerFocus();
+    main_focus_controller.enter.connect(() => {
+        active_cell_textview = null;
+    });
+    this.add_controller(main_focus_controller);
 
     // Commenté temporairement
     // buffer.changed.connect(() => {
@@ -591,24 +602,38 @@ private void apply_pending_attributes(TextIter iter, int text_length) {
     }
 }
 
+// Méthode helper pour obtenir le buffer actif (cellule de tableau ou buffer principal)
+private Gtk.TextBuffer get_active_buffer() {
+    if (active_cell_textview != null) {
+        return active_cell_textview.get_buffer();
+    }
+    return buffer;
+}
+
 // Exemple d'utilisation sécurisée d'un tag
 public void apply_bold() {
+    var active_buffer = get_active_buffer();
     TextIter start, end;
-    if (buffer.get_selection_bounds(out start, out end)) {
-        if (tag_bold == null) {
-            ensure_tags();
+    if (active_buffer.get_selection_bounds(out start, out end)) {
+        var tag_table = active_buffer.get_tag_table();
+        var bold_tag = tag_table.lookup("bold");
+        if (bold_tag == null) {
+            bold_tag = active_buffer.create_tag("bold", "weight", Pango.Weight.BOLD);
         }
-        buffer.apply_tag(tag_bold, start, end);
+        active_buffer.apply_tag(bold_tag, start, end);
     }
 }
 
 public void apply_italic() {
+    var active_buffer = get_active_buffer();
     TextIter start, end;
-    if (buffer.get_selection_bounds(out start, out end)) {
-        if (tag_italic == null) {
-            ensure_tags();
+    if (active_buffer.get_selection_bounds(out start, out end)) {
+        var tag_table = active_buffer.get_tag_table();
+        var italic_tag = tag_table.lookup("italic");
+        if (italic_tag == null) {
+            italic_tag = active_buffer.create_tag("italic", "style", Pango.Style.ITALIC);
         }
-        buffer.apply_tag(tag_italic, start, end);
+        active_buffer.apply_tag(italic_tag, start, end);
     }
 }
 
@@ -684,34 +709,50 @@ public void clear_heading_action() {
 }
 
 public void apply_code() {
+    var active_buffer = get_active_buffer();
     TextIter start, end;
-    if (buffer.get_selection_bounds(out start, out end)) {
-        if (tag_code != null)
-            buffer.apply_tag(tag_code, start, end);
+    if (active_buffer.get_selection_bounds(out start, out end)) {
+        var tag_table = active_buffer.get_tag_table();
+        var code_tag = tag_table.lookup("code");
+        if (code_tag == null) {
+            code_tag = active_buffer.create_tag("code", "family", "monospace", "background", "#f0f0f0");
+        }
+        active_buffer.apply_tag(code_tag, start, end);
     }
 }
 
 public void apply_quote() {
+    var active_buffer = get_active_buffer();
     TextIter start, end;
-    if (buffer.get_selection_bounds(out start, out end)) {
-        if (tag_quote != null)
-            buffer.apply_tag(tag_quote, start, end);
+    if (active_buffer.get_selection_bounds(out start, out end)) {
+        var tag_table = active_buffer.get_tag_table();
+        var quote_tag = tag_table.lookup("quote");
+        if (quote_tag == null) {
+            quote_tag = active_buffer.create_tag("quote", "style", Pango.Style.ITALIC, "foreground", "#555555");
+        }
+        active_buffer.apply_tag(quote_tag, start, end);
     }
 }
 
 public void apply_format(TextFormatting format) {
+    var active_buffer = get_active_buffer();
+    var tag_table = active_buffer.get_tag_table();
     TextIter start, end;
-    if (buffer.get_selection_bounds(out start, out end)) {
+    if (active_buffer.get_selection_bounds(out start, out end)) {
         switch (format) {
             case TextFormatting.UNDERLINE:
-            if (tag_underline == null)
-                ensure_tags();
-            buffer.apply_tag(tag_underline, start, end);
+            var underline_tag = tag_table.lookup("underline");
+            if (underline_tag == null) {
+                underline_tag = active_buffer.create_tag("underline", "underline", Pango.Underline.SINGLE);
+            }
+            active_buffer.apply_tag(underline_tag, start, end);
             break;
         case TextFormatting.STRIKETHROUGH:
-            if (tag_strikethrough == null)
-                ensure_tags();
-            buffer.apply_tag(tag_strikethrough, start, end);
+            var strikethrough_tag = tag_table.lookup("strikethrough");
+            if (strikethrough_tag == null) {
+                strikethrough_tag = active_buffer.create_tag("strikethrough", "strikethrough", true);
+            }
+            active_buffer.apply_tag(strikethrough_tag, start, end);
             break;
         default:
             break;
@@ -721,31 +762,43 @@ public void apply_format(TextFormatting format) {
 
 // === ÉTAT COURANT ET BASCULE DES FORMATS ===
 public bool is_bold_active() {
-    if (tag_bold == null) return false;
+    var active_buffer = get_active_buffer();
+    var tag_table = active_buffer.get_tag_table();
+    var bold_tag = tag_table.lookup("bold");
+    if (bold_tag == null) return false;
     Gtk.TextIter it;
-    buffer.get_iter_at_mark(out it, buffer.get_insert());
-    return it.has_tag(tag_bold);
+    active_buffer.get_iter_at_mark(out it, active_buffer.get_insert());
+    return it.has_tag(bold_tag);
 }
 
 public bool is_italic_active() {
-    if (tag_italic == null) return false;
+    var active_buffer = get_active_buffer();
+    var tag_table = active_buffer.get_tag_table();
+    var italic_tag = tag_table.lookup("italic");
+    if (italic_tag == null) return false;
     Gtk.TextIter it;
-    buffer.get_iter_at_mark(out it, buffer.get_insert());
-    return it.has_tag(tag_italic);
+    active_buffer.get_iter_at_mark(out it, active_buffer.get_insert());
+    return it.has_tag(italic_tag);
 }
 
 public bool is_underline_active() {
-    if (tag_underline == null) return false;
+    var active_buffer = get_active_buffer();
+    var tag_table = active_buffer.get_tag_table();
+    var underline_tag = tag_table.lookup("underline");
+    if (underline_tag == null) return false;
     Gtk.TextIter it;
-    buffer.get_iter_at_mark(out it, buffer.get_insert());
-    return it.has_tag(tag_underline);
+    active_buffer.get_iter_at_mark(out it, active_buffer.get_insert());
+    return it.has_tag(underline_tag);
 }
 
 public bool is_strikethrough_active() {
-    if (tag_strikethrough == null) return false;
+    var active_buffer = get_active_buffer();
+    var tag_table = active_buffer.get_tag_table();
+    var strikethrough_tag = tag_table.lookup("strikethrough");
+    if (strikethrough_tag == null) return false;
     Gtk.TextIter it;
-    buffer.get_iter_at_mark(out it, buffer.get_insert());
-    return it.has_tag(tag_strikethrough);
+    active_buffer.get_iter_at_mark(out it, active_buffer.get_insert());
+    return it.has_tag(strikethrough_tag);
 }
 
 // Renvoie 0 si aucun titre n'est actif, sinon 1, 2 ou 3
@@ -759,48 +812,60 @@ public int get_active_heading_level() {
     return 0;
 }
 public void toggle_bold() {
+    var active_buffer = get_active_buffer();
+    var tag_table = active_buffer.get_tag_table();
     TextIter start, end;
-    if (!buffer.get_selection_bounds(out start, out end)) return;
-    if (tag_bold == null) tag_bold = buffer.create_tag("bold", "weight", Pango.Weight.BOLD);
+    if (!active_buffer.get_selection_bounds(out start, out end)) return;
+    var bold_tag = tag_table.lookup("bold");
+    if (bold_tag == null) bold_tag = active_buffer.create_tag("bold", "weight", Pango.Weight.BOLD);
     // Détecter l'état sur le début de sélection
-    bool active = start.has_tag(tag_bold);
+    bool active = start.has_tag(bold_tag);
     if (active)
-        buffer.remove_tag(tag_bold, start, end);
+        active_buffer.remove_tag(bold_tag, start, end);
     else
-        buffer.apply_tag(tag_bold, start, end);
+        active_buffer.apply_tag(bold_tag, start, end);
 }
 
 public void toggle_italic() {
+    var active_buffer = get_active_buffer();
+    var tag_table = active_buffer.get_tag_table();
     TextIter start, end;
-    if (!buffer.get_selection_bounds(out start, out end)) return;
-    if (tag_italic == null) tag_italic = buffer.create_tag("italic", "style", Pango.Style.ITALIC);
-    bool active = start.has_tag(tag_italic);
+    if (!active_buffer.get_selection_bounds(out start, out end)) return;
+    var italic_tag = tag_table.lookup("italic");
+    if (italic_tag == null) italic_tag = active_buffer.create_tag("italic", "style", Pango.Style.ITALIC);
+    bool active = start.has_tag(italic_tag);
     if (active)
-        buffer.remove_tag(tag_italic, start, end);
+        active_buffer.remove_tag(italic_tag, start, end);
     else
-        buffer.apply_tag(tag_italic, start, end);
+        active_buffer.apply_tag(italic_tag, start, end);
 }
 
 public void toggle_underline() {
+    var active_buffer = get_active_buffer();
+    var tag_table = active_buffer.get_tag_table();
     TextIter start, end;
-    if (!buffer.get_selection_bounds(out start, out end)) return;
-    if (tag_underline == null) tag_underline = buffer.create_tag("underline", "underline", Pango.Underline.SINGLE);
-    bool active = start.has_tag(tag_underline);
+    if (!active_buffer.get_selection_bounds(out start, out end)) return;
+    var underline_tag = tag_table.lookup("underline");
+    if (underline_tag == null) underline_tag = active_buffer.create_tag("underline", "underline", Pango.Underline.SINGLE);
+    bool active = start.has_tag(underline_tag);
     if (active)
-        buffer.remove_tag(tag_underline, start, end);
+        active_buffer.remove_tag(underline_tag, start, end);
     else
-        buffer.apply_tag(tag_underline, start, end);
+        active_buffer.apply_tag(underline_tag, start, end);
 }
 
 public void toggle_strikethrough() {
+    var active_buffer = get_active_buffer();
+    var tag_table = active_buffer.get_tag_table();
     TextIter start, end;
-    if (!buffer.get_selection_bounds(out start, out end)) return;
-    if (tag_strikethrough == null) tag_strikethrough = buffer.create_tag("strikethrough", "strikethrough", true);
-    bool active = start.has_tag(tag_strikethrough);
+    if (!active_buffer.get_selection_bounds(out start, out end)) return;
+    var strikethrough_tag = tag_table.lookup("strikethrough");
+    if (strikethrough_tag == null) strikethrough_tag = active_buffer.create_tag("strikethrough", "strikethrough", true);
+    bool active = start.has_tag(strikethrough_tag);
     if (active)
-        buffer.remove_tag(tag_strikethrough, start, end);
+        active_buffer.remove_tag(strikethrough_tag, start, end);
     else
-        buffer.apply_tag(tag_strikethrough, start, end);
+        active_buffer.apply_tag(strikethrough_tag, start, end);
 }
 
 public void insert_list(bool ordered) {
@@ -1648,6 +1713,19 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
                 click_controller.set_state(Gtk.EventSequenceState.CLAIMED);
             });
             text_view.add_controller(click_controller);
+
+            // Tracker le focus pour savoir quelle cellule est active (pour les enrichissements)
+            var focus_controller = new Gtk.EventControllerFocus();
+            focus_controller.enter.connect(() => {
+                active_cell_textview = text_view;
+            });
+            focus_controller.leave.connect(() => {
+                // NE PAS réinitialiser active_cell_textview à null !
+                // On garde la référence pour que les enrichissements fonctionnent
+                // même après avoir cliqué sur un bouton de la barre d'outils
+                // active_cell_textview sera mis à jour quand une autre cellule gagne le focus
+            });
+            text_view.add_controller(focus_controller);
 
             // Déterminer la largeur/hauteur initiale
             int initial_width = 0; if (table.column_widths.size > j) initial_width = table.column_widths[j];
@@ -3179,9 +3257,9 @@ public int get_current_font_size() {
 
 /** Récupère la couleur de texte courante au curseur */
 public Gdk.RGBA? get_current_foreground_color() {
-    var buffer = this.get_buffer();
+    var active_buffer = get_active_buffer();
     TextIter iter;
-    buffer.get_iter_at_mark(out iter, buffer.get_insert());
+    active_buffer.get_iter_at_mark(out iter, active_buffer.get_insert());
 
     // Parcourir les tags actifs au curseur
     foreach (var tag in iter.get_tags()) {
@@ -3199,9 +3277,9 @@ public Gdk.RGBA? get_current_foreground_color() {
 
 /** Récupère la couleur de fond courante au curseur */
 public Gdk.RGBA? get_current_background_color() {
-    var buffer = this.get_buffer();
+    var active_buffer = get_active_buffer();
     TextIter iter;
-    buffer.get_iter_at_mark(out iter, buffer.get_insert());
+    active_buffer.get_iter_at_mark(out iter, active_buffer.get_insert());
 
     // Parcourir les tags actifs au curseur
     foreach (var tag in iter.get_tags()) {
@@ -3301,16 +3379,17 @@ public void apply_font_and_size(string? font_family, int size) {
 
 /** Applique la couleur de texte */
 public void apply_foreground_color(Gdk.RGBA color) {
+    var active_buffer = get_active_buffer();
     TextIter start, end;
-    if (buffer.get_selection_bounds(out start, out end)) {
-        var tag = buffer.create_tag(null, "foreground-rgba", color);
-        buffer.apply_tag(tag, start, end);
+    if (active_buffer.get_selection_bounds(out start, out end)) {
+        var tag = active_buffer.create_tag(null, "foreground-rgba", color);
+        active_buffer.apply_tag(tag, start, end);
     } else {
         // Marquer la couleur courante pour les futures insertions
-        var tag_table = buffer.get_tag_table();
+        var tag_table = active_buffer.get_tag_table();
         var color_tag = tag_table.lookup("current-foreground");
         if (color_tag == null) {
-            color_tag = buffer.create_tag("current-foreground", "foreground-rgba", color);
+            color_tag = active_buffer.create_tag("current-foreground", "foreground-rgba", color);
         } else {
             color_tag.set_property("foreground-rgba", color);
         }
@@ -3319,16 +3398,17 @@ public void apply_foreground_color(Gdk.RGBA color) {
 
 /** Applique la couleur de fond */
 public void apply_background_color(Gdk.RGBA color) {
+    var active_buffer = get_active_buffer();
     TextIter start, end;
-    if (buffer.get_selection_bounds(out start, out end)) {
-        var tag = buffer.create_tag(null, "background-rgba", color);
-        buffer.apply_tag(tag, start, end);
+    if (active_buffer.get_selection_bounds(out start, out end)) {
+        var tag = active_buffer.create_tag(null, "background-rgba", color);
+        active_buffer.apply_tag(tag, start, end);
     } else {
         // Marquer la couleur de fond courante pour les futures insertions
-        var tag_table = buffer.get_tag_table();
+        var tag_table = active_buffer.get_tag_table();
         var bg_tag = tag_table.lookup("current-background");
         if (bg_tag == null) {
-            bg_tag = buffer.create_tag("current-background", "background-rgba", color);
+            bg_tag = active_buffer.create_tag("current-background", "background-rgba", color);
         } else {
             bg_tag.set_property("background-rgba", color);
         }
