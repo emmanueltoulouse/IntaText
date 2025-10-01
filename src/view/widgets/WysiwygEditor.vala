@@ -1533,14 +1533,14 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
             }
             .col-resize-grip {
                 background: rgba(0,0,0,0.08);
-                min-width: 6px;
+                min-width: 1px;
             }
             .col-resize-grip:hover {
                 background: rgba(0,0,0,0.18);
             }
             .row-resize-grip {
                 background: rgba(0,0,0,0.08);
-                min-height: 6px;
+                min-height: 1px;
             }
             .row-resize-grip:hover {
                 background: rgba(0,0,0,0.18);
@@ -1570,107 +1570,10 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
 
     // Créer les cellules du tableau avec TextView pour supporter le formatage
     var text_views = new Gtk.TextView[table.rows.size, num_cols];
-    var cell_widgets = new Gtk.Widget[table.rows.size, num_cols];
-
-    // Helpers: swap model + view for columns/rows
-    void swap_columns_in_model_and_view(int a, int b) {
-        if (a == b) return;
-        if (a < 0 || b < 0 || a >= num_cols || b >= num_cols) return;
-        // swap model cells
-        for (int ri = 0; ri < table.rows.size; ri++) {
-            var r = table.rows[ri];
-            if (r != null && a < r.size && b < r.size) {
-                var tmp = r[a]; r[a] = r[b]; r[b] = tmp;
-            }
-        }
-        // swap widths
-        if (a < table.column_widths.size && b < table.column_widths.size) {
-            int tmpw = table.column_widths[a]; table.column_widths[a] = table.column_widths[b]; table.column_widths[b] = tmpw;
-        }
-        // swap widgets in grid and arrays
-        var layout_manager = table_grid.get_layout_manager();
-        for (int ri = 0; ri < table.rows.size; ri++) {
-            var wa = cell_widgets[ri, a];
-            var wb = cell_widgets[ri, b];
-            if (wa != null && wb != null) {
-                var child_a = (Gtk.GridLayoutChild?) layout_manager.get_layout_child(wa);
-                var child_b = (Gtk.GridLayoutChild?) layout_manager.get_layout_child(wb);
-                if (child_a != null) {
-                    child_a.set_column(2 * b);
-                }
-                if (child_b != null) {
-                    child_b.set_column(2 * a);
-                }
-                // swap references pour refléter le nouvel ordre logique
-                var tmp_widget = cell_widgets[ri, a];
-                cell_widgets[ri, a] = cell_widgets[ri, b];
-                cell_widgets[ri, b] = tmp_widget;
-
-                var tmp_view = text_views[ri, a];
-                text_views[ri, a] = text_views[ri, b];
-                text_views[ri, b] = tmp_view;
-            }
-        }
-        table_grid.queue_allocate();
-    }
-
-    void swap_rows_in_model_and_view(int a, int b) {
-        if (a == b) return;
-        if (a < 0 || b < 0 || a >= table.rows.size || b >= table.rows.size) return;
-        // swap model rows
-        var tmp_row = table.rows[a]; table.rows[a] = table.rows[b]; table.rows[b] = tmp_row;
-        // swap heights
-        if (a < table.row_heights.size && b < table.row_heights.size) {
-            int tmph = table.row_heights[a]; table.row_heights[a] = table.row_heights[b]; table.row_heights[b] = tmph;
-        }
-        // swap widgets in grid and arrays
-    var row_layout_manager = table_grid.get_layout_manager();
-    for (int cj = 0; cj < num_cols; cj++) {
-            var wa = cell_widgets[a, cj];
-            var wb = cell_widgets[b, cj];
-            if (wa != null && wb != null) {
-        var child_a = (Gtk.GridLayoutChild?) row_layout_manager.get_layout_child(wa);
-        var child_b = (Gtk.GridLayoutChild?) row_layout_manager.get_layout_child(wb);
-                if (child_a != null) {
-                    child_a.set_row(2 * b);
-                }
-                if (child_b != null) {
-                    child_b.set_row(2 * a);
-                }
-                var tmp_widget = cell_widgets[a, cj];
-                cell_widgets[a, cj] = cell_widgets[b, cj];
-                cell_widgets[b, cj] = tmp_widget;
-
-                var tmp_view = text_views[a, cj];
-                text_views[a, cj] = text_views[b, cj];
-                text_views[b, cj] = tmp_view;
-            }
-        }
-        table_grid.queue_allocate();
-    }
 
     int content_rows = table.rows.size;
     int content_cols = num_cols;
     int grid_rows = content_rows * 2 - 1;
-    int grid_cols = content_cols * 2 - 1;
-
-    int find_column_index_for_cell(Gtk.Widget cell_widget_ref) {
-        for (int col = 0; col < content_cols; col++) {
-            if (cell_widgets[0, col] == cell_widget_ref) {
-                return col;
-            }
-        }
-        return -1;
-    }
-
-    int find_row_index_for_cell(Gtk.Widget cell_widget_ref) {
-        for (int row = 0; row < content_rows; row++) {
-            if (cell_widgets[row, 0] == cell_widget_ref) {
-                return row;
-            }
-        }
-        return -1;
-    }
 
     for (int i = 0; i < content_rows; i++) {
         var row = table.rows[i];
@@ -1759,94 +1662,16 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
             text_view.set_hexpand(false);
             text_view.set_vexpand(false);
 
-            // Construire le widget de cellule, avec poignées de déplacement si applicable
-            Gtk.Widget cell_widget;
-            if (is_header || j == 0) {
-                var box = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 4);
-                Gtk.Widget owning_cell_widget = box;
-                // Poignée de déplacement colonne sur entête
-                if (is_header) {
-                    var col_handle = new Gtk.Label("≡");
-                    col_handle.add_css_class("handle-decor");
-                    col_handle.add_css_class("col-move-handle");
-                    col_handle.set_tooltip_text("Glissez horizontalement pour déplacer la colonne");
-                    var col_drag = new Gtk.GestureDrag();
-                    col_drag.set_propagation_phase(Gtk.PropagationPhase.TARGET);
-                    int cur_col = j;
-                    double acc_dx = 0.0;
-                    col_drag.drag_begin.connect((x, y) => {
-                        col_drag.set_state(Gtk.EventSequenceState.CLAIMED);
-                        acc_dx = 0.0;
-                        int dynamic_col = find_column_index_for_cell(owning_cell_widget);
-                        cur_col = (dynamic_col >= 0) ? dynamic_col : j;
-                    });
-                    col_drag.drag_update.connect((dx, dy) => {
-                        if (cur_col < 0) return;
-                        acc_dx += dx;
-                        int threshold = 40;
-                        if (acc_dx > threshold && cur_col < content_cols - 1) {
-                            swap_columns_in_model_and_view(cur_col, cur_col + 1);
-                            cur_col++;
-                            acc_dx = 0.0;
-                        } else if (acc_dx < -threshold && cur_col > 0) {
-                            swap_columns_in_model_and_view(cur_col, cur_col - 1);
-                            cur_col--;
-                            acc_dx = 0.0;
-                        }
-                    });
-                    col_handle.add_controller(col_drag);
-                    box.append(col_handle);
-                }
-                // Poignée de déplacement ligne sur première colonne (sauf entête)
-                if (!is_header && j == 0) {
-                    var row_handle = new Gtk.Label("⋮");
-                    row_handle.add_css_class("handle-decor");
-                    row_handle.add_css_class("row-move-handle");
-                    row_handle.set_tooltip_text("Glissez verticalement pour déplacer la ligne");
-                    var row_drag2 = new Gtk.GestureDrag();
-                    row_drag2.set_propagation_phase(Gtk.PropagationPhase.TARGET);
-                    int cur_row = i;
-                    double acc_dy = 0.0;
-                    row_drag2.drag_begin.connect((x, y) => {
-                        row_drag2.set_state(Gtk.EventSequenceState.CLAIMED);
-                        acc_dy = 0.0;
-                        int dynamic_row = find_row_index_for_cell(owning_cell_widget);
-                        cur_row = (dynamic_row >= 0) ? dynamic_row : i;
-                    });
-                    row_drag2.drag_update.connect((dx, dy) => {
-                        if (cur_row < 0) return;
-                        acc_dy += dy;
-                        int threshold = 28;
-                        if (acc_dy > threshold && cur_row < content_rows - 1) {
-                            swap_rows_in_model_and_view(cur_row, cur_row + 1);
-                            cur_row++;
-                            acc_dy = 0.0;
-                        } else if (acc_dy < -threshold && cur_row > 1) { // ne pas passer au-dessus de l'entête
-                            swap_rows_in_model_and_view(cur_row, cur_row - 1);
-                            cur_row--;
-                            acc_dy = 0.0;
-                        }
-                    });
-                    row_handle.add_controller(row_drag2);
-                    box.append(row_handle);
-                }
-                box.append(text_view);
-                cell_widget = box;
-            } else {
-                cell_widget = text_view;
-            }
-
             // Ajouter le widget de cellule au grid à une coordonnée paire (2*j, 2*i)
-            table_grid.attach(cell_widget, 2 * j, 2 * i, 1, 1);
-            cell_widgets[i, j] = cell_widget;
+            table_grid.attach(text_view, 2 * j, 2 * i, 1, 1);
         }
         // Ajouter une poignée de redimensionnement de ligne (entre lignes et après la dernière)
         if (i < content_rows) {
             // Une poignée par segment de colonne pour éviter le chevauchement avec les poignées de colonne
             for (int sj = 0; sj < content_cols; sj++) {
                 var row_grip = new Gtk.DrawingArea();
-                row_grip.set_content_width(6);
-                row_grip.set_content_height(6);
+                row_grip.set_content_width(1);
+                row_grip.set_content_height(1);
                 row_grip.add_css_class("row-resize-grip");
                 row_grip.set_tooltip_text("Glissez pour redimensionner la ligne");
                 row_grip.set_cursor_from_name("row-resize");
@@ -1898,8 +1723,8 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
     // Ajouter des poignées de redimensionnement de colonnes (entre colonnes et après la dernière)
     for (int j = 0; j < content_cols; j++) {
         var col_grip = new Gtk.DrawingArea();
-        col_grip.set_content_width(8);
-        col_grip.set_content_height(6);
+        col_grip.set_content_width(1);
+        col_grip.set_content_height(1);
         col_grip.add_css_class("col-resize-grip");
         col_grip.set_tooltip_text("Glissez pour redimensionner la colonne");
         col_grip.set_cursor_from_name("col-resize");
