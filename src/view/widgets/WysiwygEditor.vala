@@ -483,7 +483,7 @@ private void on_mouse_click(Gtk.GestureClick gesture, int n_press, double x, dou
             // Trouver l'URL du lien
             string? url = get_link_url_at_iter(iter);
             if (url != null && url.length > 0) {
-                open_url_in_browser(url);
+                open_link(url);
             }
         }
     }
@@ -501,7 +501,6 @@ private string? get_link_url_at_iter(TextIter iter) {
             // Décoder l'URL du nom du tag
             string encoded_url = tag_name.substring("link::u:".length);
             string decoded_url = GLib.Uri.unescape_string(encoded_url, null);
-            print("URL trouvée dans tag: %s\n", decoded_url);
             return decoded_url;
         }
     }
@@ -525,14 +524,12 @@ private string? get_link_url_at_iter(TextIter iter) {
 
     // Extraire le texte du lien
     string link_text = buffer.get_text(link_start, link_end, false);
-    print("Texte du lien extrait: %s\n", link_text);
 
     // Si le texte visible est une URL valide, l'utiliser
     if (is_valid_url(link_text)) {
         return link_text;
     }
 
-    print("Aucune URL valide trouvée pour le lien\n");
     return null;
 }
 
@@ -542,14 +539,147 @@ private bool is_valid_url(string text) {
            text.has_prefix("ftp://") || text.has_prefix("mailto:");
 }
 
-// Ouvre une URL dans le navigateur par défaut
-private void open_url_in_browser(string url) {
-    try {
-        GLib.AppInfo.launch_default_for_uri(url, null);
-        print("Ouverture du lien : %s\n", url);
-    } catch (Error e) {
-        warning("Impossible d'ouvrir l'URL %s : %s", url, e.message);
+// Ouvre une URL ou navigue vers un lien interne
+private void open_link(string url) {
+    // Vérifier si c'est un lien interne (ancre)
+    if (url.has_prefix("#")) {
+        scroll_to_anchor(url);
+    } else if (url.has_prefix("http://") || url.has_prefix("https://") || 
+               url.has_prefix("ftp://") || url.has_prefix("mailto:")) {
+        // Lien externe absolu - ouvrir dans le navigateur
+        try {
+            GLib.AppInfo.launch_default_for_uri(url, null);
+        } catch (Error e) {
+            warning("Impossible d'ouvrir l'URL %s : %s", url, e.message);
+        }
+    } else {
+        // Lien relatif - pas encore supporté
+        warning("Les liens relatifs ne sont pas encore supportés : %s", url);
     }
+}
+
+// Fait défiler le document jusqu'à une ancre spécifique
+private void scroll_to_anchor(string anchor) {
+    // Retirer le # du début
+    string anchor_id = anchor.has_prefix("#") ? anchor.substring(1) : anchor;
+    
+    // Normaliser l'ancre recherchée pour la comparaison
+    string normalized_anchor = generate_heading_id_for_comparison(anchor_id);
+    
+    // Rechercher le titre correspondant dans le document
+    TextIter start, end;
+    buffer.get_bounds(out start, out end);
+    
+    // Parcourir le document ligne par ligne pour trouver un titre
+    TextIter iter = start;
+    while (!iter.equal(end)) {
+        TextIter line_start = iter;
+        line_start.set_line_offset(0);
+        TextIter line_end = line_start;
+        line_end.forward_to_line_end();
+        
+        // Vérifier si cette ligne a un tag de titre
+        bool is_heading = false;
+        if (tag_heading1 != null && line_start.has_tag(tag_heading1)) is_heading = true;
+        if (tag_heading2 != null && line_start.has_tag(tag_heading2)) is_heading = true;
+        if (tag_heading3 != null && line_start.has_tag(tag_heading3)) is_heading = true;
+        
+        if (is_heading) {
+            // Extraire le texte du titre
+            string heading_text = buffer.get_text(line_start, line_end, false);
+            
+            // Générer l'ID du titre (même logique que dans le markdown)
+            string generated_id = generate_heading_id(heading_text);
+            
+            // Comparer avec l'ancre recherchée (les deux normalisés)
+            if (generated_id == normalized_anchor) {
+                // Trouvé ! Faire défiler jusqu'à cette position
+                var mark = buffer.create_mark(null, line_start, true);
+                scroll_to_mark(mark, 0.0, true, 0.0, 0.1);
+                buffer.delete_mark(mark);
+                return;
+            }
+        }
+        
+        // Passer à la ligne suivante
+        if (!iter.forward_line()) break;
+    }
+    
+    warning("Ancre non trouvée : %s", anchor_id);
+}
+
+// Normalise une chaîne pour la comparaison d'ancres (enlève les accents)
+private string generate_heading_id_for_comparison(string text) {
+    // Convertir en minuscules d'abord
+    string lowered = text.down();
+    
+    // Remplacer les caractères accentués courants manuellement
+    string normalized = lowered
+        .replace("é", "e").replace("è", "e").replace("ê", "e").replace("ë", "e")
+        .replace("à", "a").replace("â", "a").replace("ä", "a")
+        .replace("ù", "u").replace("û", "u").replace("ü", "u")
+        .replace("ô", "o").replace("ö", "o")
+        .replace("î", "i").replace("ï", "i")
+        .replace("ç", "c")
+        .replace("ñ", "n");
+    
+    // Construire l'ID en ne gardant que les caractères ASCII alphanumériques et les tirets
+    StringBuilder result = new StringBuilder();
+    unichar c;
+    for (int i = 0; normalized.get_next_char(ref i, out c);) {
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            result.append_unichar(c);
+        } else if (c == '-') {
+            result.append_c('-');
+        }
+        // Ignorer tout le reste
+    }
+    
+    return result.str;
+}
+
+// Génère un ID de titre compatible avec les ancres markdown
+private string generate_heading_id(string text) {
+    // Convertir en minuscules d'abord
+    string lowered = text.down();
+    
+    // Remplacer les caractères accentués courants manuellement
+    string normalized = lowered
+        .replace("é", "e").replace("è", "e").replace("ê", "e").replace("ë", "e")
+        .replace("à", "a").replace("â", "a").replace("ä", "a")
+        .replace("ù", "u").replace("û", "u").replace("ü", "u")
+        .replace("ô", "o").replace("ö", "o")
+        .replace("î", "i").replace("ï", "i")
+        .replace("ç", "c")
+        .replace("ñ", "n");
+    
+    // Construire l'ID en ne gardant que les caractères alphanumériques ASCII et les tirets
+    StringBuilder result = new StringBuilder();
+    unichar c;
+    for (int i = 0; normalized.get_next_char(ref i, out c);) {
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            // Caractères alphanumériques ASCII
+            result.append_unichar(c);
+        } else if (c.isspace() || c == '-' || c == '.') {
+            // Espaces, tirets et points deviennent des tirets
+            // Ajouter un tiret seulement si le dernier caractère n'en est pas un
+            if (result.len > 0 && result.str[result.len - 1] != '-') {
+                result.append_c('-');
+            }
+        }
+        // Ignorer les autres caractères
+    }
+    
+    // Retirer les tirets en début et fin
+    string final_id = result.str.strip();
+    while (final_id.has_prefix("-")) {
+        final_id = final_id.substring(1);
+    }
+    while (final_id.has_suffix("-")) {
+        final_id = final_id.substring(0, final_id.length - 1);
+    }
+    
+    return final_id;
 }
 
 // Applique les attributs en attente au texte qui vient d'être inséré
@@ -1706,13 +1836,71 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
             // pour que la sélection de texte fonctionne normalement dans la cellule
             var click_controller = new Gtk.GestureClick();
             click_controller.set_propagation_phase(Gtk.PropagationPhase.BUBBLE);
-            click_controller.pressed.connect((n_press, _x, _y) => {
+            click_controller.pressed.connect((n_press, x, y) => {
+                // Vérifier d'abord si on clique sur un lien avec Ctrl
+                var event = click_controller.get_last_event(click_controller.get_last_updated_sequence());
+                if (event != null) {
+                    var modifiers = event.get_modifier_state();
+                    if ((modifiers & (int)Gdk.ModifierType.CONTROL_MASK) != 0) {
+                        // Convertir les coordonnées en coordonnées buffer
+                        int buffer_x, buffer_y;
+                        text_view.window_to_buffer_coords(Gtk.TextWindowType.TEXT, (int)x, (int)y, out buffer_x, out buffer_y);
+                        
+                        // Obtenir l'itérateur à cette position
+                        TextIter link_iter;
+                        if (text_view.get_iter_at_location(out link_iter, buffer_x, buffer_y)) {
+                            // Chercher un tag de lien
+                            var tags = link_iter.get_tags();
+                            foreach (var tag in tags) {
+                                if (tag.name != null && tag.name.has_prefix("link::u:")) {
+                                    // Extraire l'URL du nom du tag
+                                    string url = tag.name.substring("link::u:".length);
+                                    url = Uri.unescape_string(url);
+                                    
+                                    // Ouvrir l'URL ou naviguer vers l'ancre
+                                    open_link(url);
+                                    
+                                    // Ne pas propager l'événement
+                                    click_controller.set_state(Gtk.EventSequenceState.CLAIMED);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 // Le TextView a déjà traité le clic (sélection, curseur, etc.)
                 // Maintenant on empêche la propagation vers les parents
                 // qui pourraient sélectionner tout le tableau
                 click_controller.set_state(Gtk.EventSequenceState.CLAIMED);
             });
             text_view.add_controller(click_controller);
+
+            // Gestionnaire de mouvement de souris pour changer le curseur sur les liens
+            var motion_controller = new Gtk.EventControllerMotion();
+            motion_controller.motion.connect((x, y) => {
+                int buffer_x, buffer_y;
+                text_view.window_to_buffer_coords(Gtk.TextWindowType.TEXT, (int)x, (int)y, out buffer_x, out buffer_y);
+                
+                TextIter motion_iter;
+                if (text_view.get_iter_at_location(out motion_iter, buffer_x, buffer_y)) {
+                    bool is_on_link = false;
+                    var tags = motion_iter.get_tags();
+                    foreach (var tag in tags) {
+                        if (tag.name != null && tag.name.has_prefix("link::u:")) {
+                            is_on_link = true;
+                            break;
+                        }
+                    }
+                    
+                    if (is_on_link) {
+                        text_view.set_cursor_from_name("pointer");
+                    } else {
+                        text_view.set_cursor_from_name("text");
+                    }
+                }
+            });
+            text_view.add_controller(motion_controller);
 
             // Tracker le focus pour savoir quelle cellule est active (pour les enrichissements)
             var focus_controller = new Gtk.EventControllerFocus();
