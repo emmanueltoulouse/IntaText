@@ -2529,10 +2529,14 @@ private void render_pivot_to_buffer(PivotDocument doc) {
             }
             buffer.insert(ref table_iter, "\n", -1);
 
+            // Sauvegarder l'offset avant d'insérer le widget (car l'itérateur sera invalidé)
+            int offset_before = table_iter.get_offset();
+            
             // Utiliser la nouvelle méthode de rendu dynamique
             insert_dynamic_table_widget(table, ref table_iter);
 
-            // Obtenir un nouvel itérateur à la fin pour continuer
+            // IMPORTANT : Recréer un itérateur valide après l'insertion du widget
+            // car insert_dynamic_table_widget invalide l'itérateur
             TextIter table_end_iter;
             buffer.get_end_iter(out table_end_iter);
             buffer.insert(ref table_end_iter, "\n", -1);
