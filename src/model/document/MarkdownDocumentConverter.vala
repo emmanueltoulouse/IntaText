@@ -287,15 +287,21 @@ public PivotDocument to_pivot(string content, string path) {
             var table = new PivotTable();
 
             // Parser la première ligne (headers)
-            var header_cells = t.split("|");
+            // Enlever les | en début et fin de ligne avant de split
+            string header_line = t.strip();
+            if (header_line.has_prefix("|")) {
+                header_line = header_line.substring(1);
+            }
+            if (header_line.has_suffix("|")) {
+                header_line = header_line.substring(0, header_line.length - 1);
+            }
+            var header_cells = header_line.split("|");
             var header_row = new Gee.ArrayList<PivotTableCell>();
             for (int j = 0; j < header_cells.length; j++) {
                 string cell = header_cells[j].strip();
-                if (cell != "") {
-                    // Parser les enrichissements dans la cellule d'en-tête
-                    var segments = parse_inline_formatting(cell);
-                    header_row.add(new PivotTableCell.from_segments(segments));
-                }
+                // Ajouter même si vide pour préserver la structure du tableau
+                var segments = parse_inline_formatting(cell);
+                header_row.add(new PivotTableCell.from_segments(segments));
             }
             if (header_row.size > 0) {
                 table.rows.add(header_row);
@@ -320,15 +326,21 @@ public PivotDocument to_pivot(string content, string path) {
                     break;
                 }
 
-                var data_cells = row_line.split("|");
+                // Enlever les | en début et fin de ligne avant de split
+                string clean_row = row_line;
+                if (clean_row.has_prefix("|")) {
+                    clean_row = clean_row.substring(1);
+                }
+                if (clean_row.has_suffix("|")) {
+                    clean_row = clean_row.substring(0, clean_row.length - 1);
+                }
+                var data_cells = clean_row.split("|");
                 var data_row = new Gee.ArrayList<PivotTableCell>();
                 for (int j = 0; j < data_cells.length; j++) {
                     string cell = data_cells[j].strip();
-                    if (cell != "") {
-                        // Parser les enrichissements dans la cellule de données
-                        var segments = parse_inline_formatting(cell);
-                        data_row.add(new PivotTableCell.from_segments(segments));
-                    }
+                    // Ajouter même si vide pour préserver la structure du tableau
+                    var segments = parse_inline_formatting(cell);
+                    data_row.add(new PivotTableCell.from_segments(segments));
                 }
                 if (data_row.size > 0) {
                     table.rows.add(data_row);
