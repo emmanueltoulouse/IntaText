@@ -13,11 +13,14 @@ test_include_dirs = include_directories('../src', '../src/model', '../src/model/
 
 # Test PivotDocument simple
 pivot_document_test = executable(
-    'pivot_document_test',
-    'unit/pivot_document_test.vala',
-    dependencies: test_dependencies,
-    include_directories: test_include_dirs,
-    install: false
+          'pivot_document_test',
+          [
+               'unit/pivot_document_test.vala',
+               '../src/model/document/PivotDocument.vala',
+          ],
+          dependencies: test_dependencies,
+          include_directories: test_include_dirs,
+          install: false
 )
 
 test('pivot_document_tests', pivot_document_test,

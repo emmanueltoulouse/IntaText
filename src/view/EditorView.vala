@@ -205,11 +205,20 @@ private void initialize_ui() {
         "🖼",
         _("Insérer une image")
     );
-    var btn_rule = make_plain_btn_from_candidates(
-        { "horizontal-rule-symbolic", "view-list-symbolic", "list-remove-symbolic" },
-        "─",
-        _("Insérer un trait de séparation")
-    );
+    // Bouton Trait: si aucune icône thème n'est trouvée, utiliser la ressource intégrée
+    var rule_icon = pick_icon({ "insert-horizontal-rule-symbolic", "horizontal-rule-symbolic", "insert-text-separator-symbolic", "text-separator-symbolic" });
+    Gtk.Button btn_rule;
+    if (rule_icon != null) {
+        btn_rule = new Gtk.Button();
+        btn_rule.set_child(new Gtk.Image.from_icon_name(rule_icon));
+    } else {
+        btn_rule = new Gtk.Button();
+        var rule_img = new Gtk.Image();
+        rule_img.set_from_resource("/com/cabineteto/IntaText/icons/horizontal-rule-symbolic.svg");
+        btn_rule.set_child(rule_img);
+    }
+    btn_rule.set_tooltip_text(_("Insérer un trait de séparation"));
+    btn_rule.add_css_class("flat");
     var btn_table = make_plain_btn_from_candidates(
         { "view-grid-symbolic", "table-symbolic", "grid-symbolic" },
         "⊞",

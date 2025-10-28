@@ -18,7 +18,9 @@
         "editor.insertSpaces": true,
         "editor.tabSize": 4,
         "editor.detectIndentation": false,
-        "editor.rulers": [100],
+        "editor.rulers": [
+            100
+        ],
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
             "source.organizeImports": "explicit",
@@ -45,12 +47,14 @@
         "**/build/**": true,
         "**/*.c": true
     },
-    "C_Cpp.default.compileCommands": "/home/emmanuel/Bureau/Projects/IntaText/build/compile_commands.json",
+    "C_Cpp.default.compileCommands": "/home/emmanuel/Projects/IntaText/build/compile_commands.json",
     "files.watcherExclude": {
         "**/build/**": true,
         "**/.git/**": true
     },
-    "editor.rulers": [100],
+    "editor.rulers": [
+        100
+    ],
     "editor.insertSpaces": true,
     "editor.tabSize": 4,
     "files.insertFinalNewline": true,

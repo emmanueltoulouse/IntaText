@@ -658,6 +658,10 @@ public class PivotTable : PivotNode {
 // Remplacer par une structure supportant les TextSegment
 public Gee.List<Gee.List<PivotTableCell>> rows = new Gee.ArrayList<Gee.List<PivotTableCell>>();
 
+// Tailles personnalisées (en pixels) pour colonnes et lignes
+public Gee.List<int> column_widths = new Gee.ArrayList<int>();
+public Gee.List<int> row_heights = new Gee.ArrayList<int>();
+
 // Méthode de compatibilité pour l'ancien accès string
 public void add_row_from_strings(Gee.List<string> string_row) {
     var cell_row = new Gee.ArrayList<PivotTableCell>();
@@ -741,6 +745,19 @@ public override Json.Object to_json(){
         rows_array.add_array_element(row_array);
     }
     obj.set_array_member("rows", rows_array);
+
+    // Sérialiser les largeurs de colonnes si disponibles
+    if (column_widths.size > 0) {
+        var cw = new Json.Array();
+        foreach (int w in column_widths) cw.add_int_element(w);
+        obj.set_array_member("column_widths", cw);
+    }
+    // Sérialiser les hauteurs de lignes si disponibles
+    if (row_heights.size > 0) {
+        var rh = new Json.Array();
+        foreach (int h in row_heights) rh.add_int_element(h);
+        obj.set_array_member("row_heights", rh);
+    }
     return obj;
 }
 
@@ -767,6 +784,20 @@ public new static PivotTable from_json(Json.Object node) throws Error {
                 }
                 table.rows.add(row_list);
             }
+        }
+    }
+
+    // Désérialiser tailles des colonnes/lignes si présentes
+    if (node.has_member("column_widths")) {
+        var cw = node.get_array_member("column_widths");
+        foreach (var el in cw.get_elements()) {
+            try { table.column_widths.add((int) el.get_int()); } catch (Error e) { /* ignore */ }
+        }
+    }
+    if (node.has_member("row_heights")) {
+        var rh = node.get_array_member("row_heights");
+        foreach (var el in rh.get_elements()) {
+            try { table.row_heights.add((int) el.get_int()); } catch (Error e) { /* ignore */ }
         }
     }
     return table;
