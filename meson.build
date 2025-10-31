@@ -268,3 +268,6 @@ executable(
 if get_option('build-tests')
   subdir('tests')
 endif
+
+# Inclure les plugins
+subdir('plugins')

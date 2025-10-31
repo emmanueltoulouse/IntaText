@@ -272,7 +272,8 @@ namespace IntaText.Plugins {
          */
         public void register_file_format (IFormatPlugin format_plugin) {
             // TODO: Implémenter add_file_format dans MainWindow
-            debug ("Format plugin registered: %s", format_plugin.metadata.id);
+            var meta = format_plugin.get_metadata ();
+            debug ("Format plugin registered: %s", meta.id);
         }
 
         /**
@@ -280,7 +281,8 @@ namespace IntaText.Plugins {
          */
         public void unregister_file_format (IFormatPlugin format_plugin) {
             // TODO: Implémenter remove_file_format dans MainWindow
-            debug ("Format plugin unregistered: %s", format_plugin.metadata.id);
+            var meta = format_plugin.get_metadata ();
+            debug ("Format plugin unregistered: %s", meta.id);
         }
 
         /**

@@ -717,7 +717,7 @@ private void add_or_update_plugin_row(string plugin_id) {
         extensions_placeholder_row = null;
     }
 
-    var metadata = plugin_info.plugin.metadata;
+    var metadata = plugin_info.metadata;
 
     Adw.ActionRow row;
     Gtk.Switch toggle;
@@ -778,7 +778,7 @@ private bool apply_plugin_state(string plugin_id, bool enable) {
         return false;
     }
 
-    var metadata = plugin_info.plugin.metadata;
+    var metadata = plugin_info.metadata;
 
     if (enable) {
         plugin_config_manager.enable_plugin(plugin_id);
@@ -833,7 +833,7 @@ private void update_plugin_row_state(string plugin_id) {
     }
 
     var row = plugin_rows.get(plugin_id);
-    row.set_subtitle(build_plugin_subtitle(plugin_info.plugin.metadata, plugin_info.state));
+    row.set_subtitle(build_plugin_subtitle(plugin_info.metadata, plugin_info.state));
 }
 
 /**

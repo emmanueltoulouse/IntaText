@@ -34,10 +34,10 @@ namespace IntaText.Plugins {
      */
     public interface IPlugin : Object {
 
-        /**
-         * Métadonnées du plugin
-         */
-        public abstract PluginMetadata metadata { get; }
+    /**
+     * Retourne les métadonnées du plugin
+     */
+    public abstract PluginMetadata get_metadata ();
 
         /**
          * Initialise le plugin

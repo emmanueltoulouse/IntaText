@@ -328,18 +328,13 @@ private GLib.MenuModel build_app_menu() {
     // AJOUT ICI :
     view_menu.append(_("Afficher/Masquer l'explorateur"), "win.toggle-explorer");
 
-    var tools_menu = new GLib.Menu();
-    tools_menu.append(_("Préférences"), "win.preferences");
-    tools_menu.append(_("Comparer des fichiers..."), "win.compare-files");
-    tools_menu.append(_("Extensions..."), "win.extensions");
-
     var help_menu = new GLib.Menu();
     help_menu.append(_("Documentation"), "win.documentation");
     help_menu.append(_("À propos"), "win.about");
 
     menu.append_submenu(_("Fichier"), file_menu);
     menu.append_submenu(_("Affichage"), view_menu);
-    menu.append_submenu(_("Outils"), tools_menu);
+    menu.append(_("Préférences"), "win.preferences");
     menu.append_submenu(_("Aide"), help_menu);
 
     return menu;

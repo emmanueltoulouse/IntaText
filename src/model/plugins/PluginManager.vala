@@ -16,6 +16,90 @@ namespace IntaText.Plugins {
     public delegate Type PluginInitFunc ();
 
     /**
+     * Adaptateur pour les plugins qui n'implémentent pas IPlugin
+     */
+    public class PluginAdapter : Object, IPlugin {
+        private Object plugin_obj;
+        private PluginMetadata _metadata;
+        private unowned Module? plugin_module;
+
+        public PluginAdapter (Object obj, PluginMetadata metadata, Module? module = null) {
+            this.plugin_obj = obj;
+            this._metadata = metadata;
+            this.plugin_module = module;
+        }
+
+        public PluginMetadata get_metadata () {
+            return _metadata;
+        }
+
+        public bool initialize (ApplicationController app_controller) {
+            // Obtenir le nom du type pour construire le nom de la fonction C
+            var type_name = plugin_obj.get_type ().name ();
+            
+            // Convertir CamelCase en snake_case et ajouter le nom de la méthode
+            // HelloWorldPlugin -> hello_world_plugin_initialize
+            string func_name = to_snake_case (type_name) + "_initialize";
+            
+            if (plugin_module != null) {
+                void* function;
+                if (plugin_module.symbol (func_name, out function)) {
+                    // Type de la fonction: gboolean (*)(HelloWorldPlugin*, GObject*)
+                    PluginInitializeFunc init_func = (PluginInitializeFunc) function;
+                    bool result = init_func (plugin_obj, app_controller);
+                    return result;
+                }
+            }
+            
+            // Fallback: retourner true
+            return true;
+        }
+
+        private string to_snake_case (string camel) {
+            var result = new StringBuilder ();
+            for (int i = 0; i < camel.length; i++) {
+                char c = camel[i];
+                if (c.isupper () && i > 0) {
+                    result.append_c ('_');
+                }
+                result.append_c (c.tolower ());
+            }
+            return result.str;
+        }
+
+        public void activate () {
+            call_void_method ("activate");
+        }
+
+        public void deactivate () {
+            call_void_method ("deactivate");
+        }
+
+        public void cleanup () {
+            call_void_method ("cleanup");
+        }
+
+        private void call_void_method (string method_name) {
+            if (plugin_module == null) return;
+            
+            var type_name = plugin_obj.get_type ().name ();
+            string func_name = to_snake_case (type_name) + "_" + method_name;
+            
+            void* function;
+            if (plugin_module.symbol (func_name, out function)) {
+                PluginVoidFunc void_func = (PluginVoidFunc) function;
+                void_func (plugin_obj);
+            }
+        }
+    }
+
+    [CCode (has_target = false)]
+    private delegate bool PluginInitializeFunc (Object plugin, Object controller);
+    
+    [CCode (has_target = false)]
+    private delegate void PluginVoidFunc (Object plugin);
+
+    /**
      * États d'un plugin
      */
     public enum PluginState {
@@ -30,17 +114,19 @@ namespace IntaText.Plugins {
      * Informations sur un plugin chargé
      */
     public class PluginInfo : Object {
-        public IPlugin plugin { get; set; }
+    public IPlugin plugin { get; private set; }
         public PluginState state { get; set; }
         public string file_path { get; set; }
         public DateTime? last_loaded { get; set; }
         public string? error_message { get; set; }
+        public PluginMetadata metadata { get; private set; }
 
-        public PluginInfo (IPlugin plugin, string file_path) {
+        public PluginInfo (IPlugin plugin, string file_path, PluginMetadata metadata) {
             this.plugin = plugin;
             this.file_path = file_path;
             this.state = PluginState.LOADED;
             this.last_loaded = new DateTime.now_local ();
+            this.metadata = metadata;
         }
     }
 
@@ -85,6 +171,8 @@ namespace IntaText.Plugins {
          */
         public void initialize (ApplicationController app_controller) {
             _app_controller = app_controller;
+            // Préparer le service d'intégration pour les plugins dynamiques
+            PluginService.instance.initialize (app_controller);
         }
 
         /**
@@ -112,8 +200,11 @@ namespace IntaText.Plugins {
             try {
                 var dir = File.new_for_path (directory);
                 if (!dir.query_exists ()) {
+                    debug ("PluginManager: directory %s does not exist", directory);
                     return;
                 }
+
+                debug ("PluginManager: scanning directory %s", directory);
 
                 var enumerator = yield dir.enumerate_children_async (
                     FileAttribute.STANDARD_NAME + "," + FileAttribute.STANDARD_TYPE,
@@ -126,12 +217,14 @@ namespace IntaText.Plugins {
 
                     if (file_info.get_file_type () == FileType.DIRECTORY) {
                         var subdir = Path.build_filename (directory, name);
+                        debug ("PluginManager: descending into %s", subdir);
                         yield discover_plugins_in_directory (subdir);
                         continue;
                     }
 
                     if (name.has_suffix (".plugin")) {
                         var plugin_path = Path.build_filename (directory, name);
+                        debug ("PluginManager: found metadata %s", plugin_path);
                         yield try_load_plugin_from_metadata (plugin_path);
                     }
                 }
@@ -173,12 +266,28 @@ namespace IntaText.Plugins {
                 // Créer une instance de plugin
                 IPlugin? plugin = yield create_plugin_instance_with_metadata (so_file, metadata);
                 if (plugin == null) {
+                    debug ("PluginManager: échec de création de %s", metadata.id);
                     return false;
                 }
 
-                var plugin_info = new PluginInfo (plugin, so_file);
+                var instance_metadata = metadata;
+                var provided_metadata = plugin.get_metadata ();
+
+                if (provided_metadata.id != null && provided_metadata.id.length > 0) {
+                    instance_metadata = provided_metadata;
+                }
+
+                if (instance_metadata.id == null || instance_metadata.id.length == 0) {
+                    instance_metadata.id = metadata.id;
+                }
+
+                instance_metadata.enabled = metadata.enabled;
+
+                var plugin_info = new PluginInfo (plugin, so_file, instance_metadata);
                 plugin_info.state = PluginState.DISCOVERED;
                 _plugins.set (metadata.id, plugin_info);
+
+                debug ("PluginManager: plugin %s chargé depuis %s", metadata.id, so_file);
 
                 plugin_loaded (metadata.id, plugin);
                 return true;
@@ -211,7 +320,7 @@ namespace IntaText.Plugins {
                     return false;
                 }
 
-                var plugin_info = new PluginInfo (plugin, file_path);
+                var plugin_info = new PluginInfo (plugin, file_path, plugin.get_metadata ());
                 _plugins.set (plugin_id, plugin_info);
 
                 plugin_loaded (plugin_id, plugin);
@@ -248,19 +357,39 @@ namespace IntaText.Plugins {
             PluginInitFunc plugin_init = (PluginInitFunc) function;
             Type plugin_type = plugin_init ();
 
-            if (plugin_type == Type.INVALID || !plugin_type.is_a (typeof (IPlugin))) {
-                warning ("Le module %s n'a pas retourné un type IPlugin valide", so_file);
+            if (plugin_type == Type.INVALID) {
+                warning ("Le module %s a retourné un type invalide", so_file);
                 return null;
             }
 
-            IPlugin? plugin = (IPlugin?) Object.new (plugin_type);
-            if (plugin == null) {
-                warning ("Échec de l'instanciation du plugin depuis %s", so_file);
+            // Accepter n'importe quel type d'Object, pas seulement IPlugin
+            if (!plugin_type.is_a (typeof (Object))) {
+                warning ("Le module %s n'a pas retourné un type Object", so_file);
                 return null;
             }
 
-            module.make_resident (); // Empêche le déchargement du module
-            return plugin;
+            // Si c'est un IPlugin, l'utiliser directement
+            if (plugin_type.is_a (typeof (IPlugin))) {
+                IPlugin? plugin = (IPlugin?) Object.new (plugin_type);
+                if (plugin == null) {
+                    warning ("Échec de l'instanciation du plugin depuis %s", so_file);
+                    return null;
+                }
+                module.make_resident ();
+                return plugin;
+            }
+
+            // Sinon, créer un wrapper qui adapte l'objet à l'interface IPlugin
+            Object plugin_obj = Object.new (plugin_type);
+            if (plugin_obj == null) {
+                warning ("Échec de l'instanciation de l'objet plugin depuis %s", so_file);
+                return null;
+            }
+
+            // Créer un adaptateur avec le module pour pouvoir appeler les fonctions
+            var adapter = new PluginAdapter (plugin_obj, metadata, module);
+            module.make_resident ();
+            return adapter;
         }
 
         // Méthodes utilitaires privées
@@ -287,24 +416,49 @@ namespace IntaText.Plugins {
                 return true; // Déjà actif
             }
 
+            if (_app_controller == null) {
+                plugin_info.state = PluginState.ERROR;
+                plugin_info.error_message = "Contrôleur d'application non initialisé";
+                warning ("Plugin %s: Activation impossible, contrôleur nul", plugin_id);
+                plugin_error (plugin_id, plugin_info.error_message);
+                return false;
+            }
+
+            bool initialized = false;
+
             try {
-                if (_app_controller != null && plugin_info.plugin.initialize (_app_controller)) {
-                    plugin_info.plugin.activate ();
-                    plugin_info.state = PluginState.ACTIVE;
-                    plugin_activated (plugin_id, plugin_info.plugin);
-                    return true;
-                } else {
-                    plugin_info.state = PluginState.ERROR;
-                    plugin_info.error_message = "Échec de l'initialisation";
-                    plugin_error (plugin_id, "Échec de l'initialisation du plugin");
-                    return false;
-                }
+                initialized = plugin_info.plugin.initialize (_app_controller);
+                debug ("Plugin %s: initialize() a retourné %s", plugin_id, initialized.to_string());
             } catch (Error e) {
                 plugin_info.state = PluginState.ERROR;
                 plugin_info.error_message = e.message;
+                warning ("Plugin %s: Exception pendant initialize(): %s", plugin_id, e.message);
                 plugin_error (plugin_id, e.message);
                 return false;
             }
+
+            if (!initialized) {
+                plugin_info.state = PluginState.ERROR;
+                plugin_info.error_message = "initialize() a retourné false";
+                warning ("Plugin %s: initialize() a retourné false", plugin_id);
+                plugin_error (plugin_id, plugin_info.error_message);
+                return false;
+            }
+
+            try {
+                plugin_info.plugin.activate ();
+            } catch (Error e) {
+                plugin_info.state = PluginState.ERROR;
+                plugin_info.error_message = e.message;
+                warning ("Plugin %s: Exception pendant activate(): %s", plugin_id, e.message);
+                plugin_error (plugin_id, e.message);
+                return false;
+            }
+
+            plugin_info.state = PluginState.ACTIVE;
+            plugin_info.error_message = null;
+            plugin_activated (plugin_id, plugin_info.plugin);
+            return true;
         }
 
         /**
@@ -383,7 +537,7 @@ namespace IntaText.Plugins {
         public ArrayList<IPlugin> get_plugins_by_type (PluginType type) {
             var result = new ArrayList<IPlugin> ();
             foreach (var plugin_info in _plugins.values) {
-                if (plugin_info.plugin.metadata.type == type && plugin_info.state == PluginState.ACTIVE) {
+                if (plugin_info.metadata.type == type && plugin_info.state == PluginState.ACTIVE) {
                     result.add (plugin_info.plugin);
                 }
             }

@@ -15,8 +15,8 @@ namespace IntaText.Plugins.Examples {
         private ApplicationController? _app_controller;
         private bool _initialized = false;
 
-        public PluginMetadata metadata {
-            get { return _metadata; }
+        public PluginMetadata get_metadata () {
+            return _metadata;
         }
 
         public ExampleUIPlugin () {

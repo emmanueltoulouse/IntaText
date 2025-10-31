@@ -28,7 +28,7 @@ namespace IntaText.Plugins {
     [CCode (cname = "IntaTextPluginsIPlugin", type_cname = "IntaTextPluginsIPluginIface", cheader_filename = "IntaText.h")]
     public interface IPlugin : GLib.Object {
         [CCode (cname = "inta_text_plugins_iplugin_get_metadata")]
-        public abstract PluginMetadata metadata { get; }
+        public abstract PluginMetadata get_metadata ();
 
         [CCode (cname = "inta_text_plugins_iplugin_initialize")]
         public abstract bool initialize (IntaText.ApplicationController app_controller);
