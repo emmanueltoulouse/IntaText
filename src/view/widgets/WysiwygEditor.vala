@@ -544,7 +544,7 @@ private void open_link(string url) {
     // Vérifier si c'est un lien interne (ancre)
     if (url.has_prefix("#")) {
         scroll_to_anchor(url);
-    } else if (url.has_prefix("http://") || url.has_prefix("https://") || 
+    } else if (url.has_prefix("http://") || url.has_prefix("https://") ||
                url.has_prefix("ftp://") || url.has_prefix("mailto:")) {
         // Lien externe absolu - ouvrir dans le navigateur
         try {
@@ -562,14 +562,14 @@ private void open_link(string url) {
 private void scroll_to_anchor(string anchor) {
     // Retirer le # du début
     string anchor_id = anchor.has_prefix("#") ? anchor.substring(1) : anchor;
-    
+
     // Normaliser l'ancre recherchée pour la comparaison
     string normalized_anchor = generate_heading_id_for_comparison(anchor_id);
-    
+
     // Rechercher le titre correspondant dans le document
     TextIter start, end;
     buffer.get_bounds(out start, out end);
-    
+
     // Parcourir le document ligne par ligne pour trouver un titre
     TextIter iter = start;
     while (!iter.equal(end)) {
@@ -577,20 +577,20 @@ private void scroll_to_anchor(string anchor) {
         line_start.set_line_offset(0);
         TextIter line_end = line_start;
         line_end.forward_to_line_end();
-        
+
         // Vérifier si cette ligne a un tag de titre
         bool is_heading = false;
         if (tag_heading1 != null && line_start.has_tag(tag_heading1)) is_heading = true;
         if (tag_heading2 != null && line_start.has_tag(tag_heading2)) is_heading = true;
         if (tag_heading3 != null && line_start.has_tag(tag_heading3)) is_heading = true;
-        
+
         if (is_heading) {
             // Extraire le texte du titre
             string heading_text = buffer.get_text(line_start, line_end, false);
-            
+
             // Générer l'ID du titre (même logique que dans le markdown)
             string generated_id = generate_heading_id(heading_text);
-            
+
             // Comparer avec l'ancre recherchée (les deux normalisés)
             if (generated_id == normalized_anchor) {
                 // Trouvé ! Faire défiler jusqu'à cette position
@@ -600,11 +600,11 @@ private void scroll_to_anchor(string anchor) {
                 return;
             }
         }
-        
+
         // Passer à la ligne suivante
         if (!iter.forward_line()) break;
     }
-    
+
     warning("Ancre non trouvée : %s", anchor_id);
 }
 
@@ -612,7 +612,7 @@ private void scroll_to_anchor(string anchor) {
 private string generate_heading_id_for_comparison(string text) {
     // Convertir en minuscules d'abord
     string lowered = text.down();
-    
+
     // Remplacer les caractères accentués courants manuellement
     string normalized = lowered
         .replace("é", "e").replace("è", "e").replace("ê", "e").replace("ë", "e")
@@ -622,7 +622,7 @@ private string generate_heading_id_for_comparison(string text) {
         .replace("î", "i").replace("ï", "i")
         .replace("ç", "c")
         .replace("ñ", "n");
-    
+
     // Construire l'ID en ne gardant que les caractères ASCII alphanumériques et les tirets
     StringBuilder result = new StringBuilder();
     unichar c;
@@ -634,7 +634,7 @@ private string generate_heading_id_for_comparison(string text) {
         }
         // Ignorer tout le reste
     }
-    
+
     return result.str;
 }
 
@@ -642,7 +642,7 @@ private string generate_heading_id_for_comparison(string text) {
 private string generate_heading_id(string text) {
     // Convertir en minuscules d'abord
     string lowered = text.down();
-    
+
     // Remplacer les caractères accentués courants manuellement
     string normalized = lowered
         .replace("é", "e").replace("è", "e").replace("ê", "e").replace("ë", "e")
@@ -652,7 +652,7 @@ private string generate_heading_id(string text) {
         .replace("î", "i").replace("ï", "i")
         .replace("ç", "c")
         .replace("ñ", "n");
-    
+
     // Construire l'ID en ne gardant que les caractères alphanumériques ASCII et les tirets
     StringBuilder result = new StringBuilder();
     unichar c;
@@ -669,7 +669,7 @@ private string generate_heading_id(string text) {
         }
         // Ignorer les autres caractères
     }
-    
+
     // Retirer les tirets en début et fin
     string final_id = result.str.strip();
     while (final_id.has_prefix("-")) {
@@ -678,7 +678,7 @@ private string generate_heading_id(string text) {
     while (final_id.has_suffix("-")) {
         final_id = final_id.substring(0, final_id.length - 1);
     }
-    
+
     return final_id;
 }
 
@@ -1845,7 +1845,7 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
                         // Convertir les coordonnées en coordonnées buffer
                         int buffer_x, buffer_y;
                         text_view.window_to_buffer_coords(Gtk.TextWindowType.TEXT, (int)x, (int)y, out buffer_x, out buffer_y);
-                        
+
                         // Obtenir l'itérateur à cette position
                         TextIter link_iter;
                         if (text_view.get_iter_at_location(out link_iter, buffer_x, buffer_y)) {
@@ -1856,10 +1856,10 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
                                     // Extraire l'URL du nom du tag
                                     string url = tag.name.substring("link::u:".length);
                                     url = Uri.unescape_string(url);
-                                    
+
                                     // Ouvrir l'URL ou naviguer vers l'ancre
                                     open_link(url);
-                                    
+
                                     // Ne pas propager l'événement
                                     click_controller.set_state(Gtk.EventSequenceState.CLAIMED);
                                     return;
@@ -1868,7 +1868,7 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
                         }
                     }
                 }
-                
+
                 // Le TextView a déjà traité le clic (sélection, curseur, etc.)
                 // Maintenant on empêche la propagation vers les parents
                 // qui pourraient sélectionner tout le tableau
@@ -1881,7 +1881,7 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
             motion_controller.motion.connect((x, y) => {
                 int buffer_x, buffer_y;
                 text_view.window_to_buffer_coords(Gtk.TextWindowType.TEXT, (int)x, (int)y, out buffer_x, out buffer_y);
-                
+
                 TextIter motion_iter;
                 if (text_view.get_iter_at_location(out motion_iter, buffer_x, buffer_y)) {
                     bool is_on_link = false;
@@ -1892,7 +1892,7 @@ private void insert_dynamic_table_widget(PivotTable table, ref TextIter iter) {
                             break;
                         }
                     }
-                    
+
                     if (is_on_link) {
                         text_view.set_cursor_from_name("pointer");
                     } else {
@@ -2531,7 +2531,7 @@ private void render_pivot_to_buffer(PivotDocument doc) {
 
             // Sauvegarder l'offset avant d'insérer le widget (car l'itérateur sera invalidé)
             int offset_before = table_iter.get_offset();
-            
+
             // Utiliser la nouvelle méthode de rendu dynamique
             insert_dynamic_table_widget(table, ref table_iter);
 

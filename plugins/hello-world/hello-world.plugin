@@ -1,0 +1,9 @@
+[Plugin]
+Id=hello-world
+Name=Hello World
+Description=Plugin d'exemple qui écrit un message dans la console
+Version=1.0.0
+Author=IntaText
+Type=UI
+Enabled=true
+Dependencies=

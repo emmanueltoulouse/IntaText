@@ -1,4 +1,5 @@
 using IntaText.Document;
+using IntaText.Plugins;
 
 namespace IntaText {
 public class ApplicationController : Object {
@@ -203,6 +204,10 @@ public void finalize_app() {
   */
 public ConfigManager get_config_manager() {
     return model.config_manager;
+}
+
+public PluginManager get_plugin_manager() {
+    return model.plugin_manager;
 }
 
 // Modifier la méthode d'initialisation

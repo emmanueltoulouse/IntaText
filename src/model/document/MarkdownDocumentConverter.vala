@@ -286,9 +286,45 @@ public PivotDocument to_pivot(string content, string path) {
             flush_paragraph();
             var table = new PivotTable();
 
-            // Parser la première ligne (headers)
+            // Fonction helper pour fusionner les lignes de tableau multi-lignes (format Microsoft Copilot)
+            string merge_multiline_table_row(int start_idx, out int end_idx) {
+                StringBuilder merged = new StringBuilder(lines[start_idx].strip());
+                end_idx = start_idx;
+
+                // Si la ligne se termine par |, c'est une ligne complète
+                if (merged.str.has_suffix("|")) {
+                    return merged.str;
+                }
+
+                // Sinon, chercher les lignes de continuation
+                for (int k = start_idx + 1; k < lines.length; k++) {
+                    string next = lines[k].strip();
+                    if (next == "") break; // Ligne vide = fin du tableau
+
+                    // Si la ligne suivante commence par |, c'est une nouvelle ligne de tableau
+                    if (next.has_prefix("|") && !merged.str.has_suffix("|")) {
+                        // C'est une continuation, ajouter sans le | initial
+                        merged.append(" ");
+                        merged.append(next.substring(1));
+                        end_idx = k;
+                        if (next.has_suffix("|")) break; // Ligne complète maintenant
+                    } else if (next.has_prefix("|")) {
+                        // Nouvelle ligne de tableau
+                        break;
+                    } else {
+                        // Ligne sans | au début = fin du tableau
+                        break;
+                    }
+                }
+                return merged.str;
+            }
+
+            // Parser la première ligne (headers) avec support multi-ligne
+            int header_end;
+            string header_line = merge_multiline_table_row(i, out header_end);
+            i = header_end;
+
             // Enlever les | en début et fin de ligne avant de split
-            string header_line = t.strip();
             if (header_line.has_prefix("|")) {
                 header_line = header_line.substring(1);
             }
@@ -312,19 +348,24 @@ public PivotDocument to_pivot(string content, string path) {
             // Vérifier si la ligne suivante est une ligne de séparation (avec -, : et |)
             bool has_separator = false;
             if (i < lines.length) {
-                string sep_line = lines[i].strip();
+                int sep_end;
+                string sep_line = merge_multiline_table_row(i, out sep_end);
                 if (sep_line.contains("|") && (sep_line.contains("-") || sep_line.contains(":"))) {
                     has_separator = true;
-                    i++; // ignorer la ligne de séparation
+                    i = sep_end + 1; // ignorer la ligne de séparation
                 }
             }
 
-            // Continuer à parser les lignes de données
+            // Continuer à parser les lignes de données avec support multi-ligne
             while (i < lines.length) {
-                string row_line = lines[i].strip();
-                if (row_line == "" || !row_line.contains("|")) {
+                string first_line = lines[i].strip();
+                if (first_line == "" || !first_line.contains("|")) {
                     break;
                 }
+
+                int row_end;
+                string row_line = merge_multiline_table_row(i, out row_end);
+                i = row_end;
 
                 // Enlever les | en début et fin de ligne avant de split
                 string clean_row = row_line;

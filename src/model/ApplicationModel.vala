@@ -6,6 +6,7 @@ public class ApplicationModel {
 public ConfigManager config_manager;
 // Gestionnaire de plugins
 public PluginManager plugin_manager;
+public PluginConfigManager plugin_config_manager;
 
 // Structures pour stocker les données des trois zones
 public ExplorerModel explorer;
@@ -14,6 +15,7 @@ public EditorModel editor;
 public ApplicationModel(ApplicationController controller) {
     config_manager = new ConfigManager();
     plugin_manager = PluginManager.instance;
+    plugin_config_manager = new PluginConfigManager ();
     explorer = new ExplorerModel(controller);
     editor = new EditorModel();
 
@@ -51,14 +53,27 @@ private async void init_plugins_async (ApplicationController controller) {
 private async void activate_enabled_plugins () {
     foreach (var plugin_id in plugin_manager.get_plugin_ids ()) {
         var plugin_info = plugin_manager.get_plugin_info (plugin_id);
-        if (plugin_info != null &&
-            plugin_info.plugin.metadata.enabled &&
-            plugin_info.state == PluginState.LOADED) {
+        if (plugin_info == null) {
+            continue;
+        }
 
-            if (plugin_manager.activate_plugin (plugin_id)) {
-                debug ("Plugin %s activé", plugin_id);
-            } else {
-                warning ("Échec de l'activation du plugin %s", plugin_id);
+        bool should_enable = plugin_config_manager.is_plugin_enabled (plugin_id);
+
+        if (should_enable) {
+            if (plugin_info.state == PluginState.LOADED || plugin_info.state == PluginState.DISCOVERED) {
+                if (plugin_manager.activate_plugin (plugin_id)) {
+                    debug ("Plugin %s activé", plugin_id);
+                } else {
+                    warning ("Échec de l'activation du plugin %s", plugin_id);
+                }
+            }
+        } else {
+            if (plugin_info.state == PluginState.ACTIVE) {
+                if (plugin_manager.deactivate_plugin (plugin_id)) {
+                    debug ("Plugin %s désactivé suite à la configuration", plugin_id);
+                } else {
+                    warning ("Échec de la désactivation du plugin %s", plugin_id);
+                }
             }
         }
     }

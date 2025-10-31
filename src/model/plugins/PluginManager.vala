@@ -9,6 +9,13 @@ using Gee;
 namespace IntaText.Plugins {
 
     /**
+     * Type de fonction d'initialisation de plugin
+     * Chaque plugin doit exporter une fonction plugin_init qui retourne le Type du plugin
+     */
+    [CCode (has_target = false)]
+    public delegate Type PluginInitFunc ();
+
+    /**
      * États d'un plugin
      */
     public enum PluginState {
@@ -116,6 +123,13 @@ namespace IntaText.Plugins {
                 FileInfo? file_info;
                 while ((file_info = enumerator.next_file ()) != null) {
                     var name = file_info.get_name ();
+
+                    if (file_info.get_file_type () == FileType.DIRECTORY) {
+                        var subdir = Path.build_filename (directory, name);
+                        yield discover_plugins_in_directory (subdir);
+                        continue;
+                    }
+
                     if (name.has_suffix (".plugin")) {
                         var plugin_path = Path.build_filename (directory, name);
                         yield try_load_plugin_from_metadata (plugin_path);
@@ -214,20 +228,39 @@ namespace IntaText.Plugins {
          * Crée une instance de plugin avec métadonnées
          */
         private async IPlugin? create_plugin_instance_with_metadata (string so_file, PluginMetadata metadata) {
-            // Ici on devrait utiliser Module.open() et Module.symbol()
-            // pour charger dynamiquement le plugin depuis la bibliothèque partagée
+            if (!Module.supported ()) {
+                warning ("Les modules dynamiques ne sont pas supportés sur cette plateforme");
+                return null;
+            }
 
-            // Pour l'instant, on crée un plugin factice basé sur le type
-            return create_mock_plugin (metadata);
-        }
+            Module module = Module.open (so_file, ModuleFlags.BIND_LAZY);
+            if (module == null) {
+                warning ("Impossible de charger le module %s : %s", so_file, Module.error ());
+                return null;
+            }
 
-        /**
-         * Crée un plugin factice pour les tests (à remplacer par le chargement dynamique)
-         */
-        private IPlugin? create_mock_plugin (PluginMetadata metadata) {
-            // Cette méthode sera remplacée par le vrai chargement de plugin
-            // Pour l'instant, on retourne null
-            return null;
+            void* function;
+            if (!module.symbol ("plugin_init", out function)) {
+                warning ("Le module %s n'exporte pas de fonction plugin_init", so_file);
+                return null;
+            }
+
+            PluginInitFunc plugin_init = (PluginInitFunc) function;
+            Type plugin_type = plugin_init ();
+
+            if (plugin_type == Type.INVALID || !plugin_type.is_a (typeof (IPlugin))) {
+                warning ("Le module %s n'a pas retourné un type IPlugin valide", so_file);
+                return null;
+            }
+
+            IPlugin? plugin = (IPlugin?) Object.new (plugin_type);
+            if (plugin == null) {
+                warning ("Échec de l'instanciation du plugin depuis %s", so_file);
+                return null;
+            }
+
+            module.make_resident (); // Empêche le déchargement du module
+            return plugin;
         }
 
         // Méthodes utilitaires privées

@@ -1,9 +1,18 @@
 namespace IntaText {
 using Gtk;
+using Gee;
+using IntaText.Plugins;
 
 public class PreferencesWindow : Adw.PreferencesWindow {
 private ApplicationController controller;
 private ConfigManager config;
+private PluginManager plugin_manager;
+private PluginConfigManager plugin_config_manager;
+private HashMap<string, Gtk.Switch> plugin_switches;
+private HashMap<string, Adw.ActionRow> plugin_rows;
+private bool updating_extension_switch = false;
+private Adw.PreferencesGroup? extensions_group = null;
+private Adw.ActionRow? extensions_placeholder_row = null;
 
 public PreferencesWindow(ApplicationController controller) {
     Object(
@@ -17,8 +26,46 @@ public PreferencesWindow(ApplicationController controller) {
 
     this.controller = controller;
     this.config = controller.get_config_manager();
+    this.plugin_manager = controller.get_plugin_manager();
+    this.plugin_config_manager = new PluginConfigManager();
+    this.plugin_switches = new HashMap<string, Gtk.Switch>();
+    this.plugin_rows = new HashMap<string, Adw.ActionRow>();
 
+    connect_plugin_signals();
     setup_ui();
+}
+
+private void connect_plugin_signals() {
+    plugin_manager.plugin_loaded.connect((plugin_id, plugin) => {
+        GLib.Idle.add(() => {
+            add_or_update_plugin_row(plugin_id);
+            return GLib.Source.REMOVE;
+        });
+    });
+
+    plugin_manager.plugin_activated.connect((plugin_id, plugin) => {
+        GLib.Idle.add(() => {
+            plugin_config_manager.enable_plugin(plugin_id);
+            sync_plugin_switch(plugin_id, true);
+            return GLib.Source.REMOVE;
+        });
+    });
+
+    plugin_manager.plugin_deactivated.connect((plugin_id, plugin) => {
+        GLib.Idle.add(() => {
+            plugin_config_manager.disable_plugin(plugin_id);
+            sync_plugin_switch(plugin_id, false);
+            return GLib.Source.REMOVE;
+        });
+    });
+
+    plugin_manager.plugin_error.connect((plugin_id, message) => {
+        GLib.Idle.add(() => {
+            show_toast_error(_("Extension %s : %s").printf(plugin_id, message));
+            sync_plugin_switch(plugin_id, false);
+            return GLib.Source.REMOVE;
+        });
+    });
 }
 
 private void setup_ui() {
@@ -624,13 +671,169 @@ private void add_page_extensions() {
     extensions_page.set_title(_("Extensions"));
     extensions_page.set_icon_name("application-x-addon-symbolic");
 
-    // Placeholder pour la future gestion des extensions
-    var placeholder_group = new Adw.PreferencesGroup();
-    placeholder_group.set_title(_("Extensions disponibles"));
-    placeholder_group.set_description(_("Aucune extension n'est actuellement installée"));
+    extensions_group = new Adw.PreferencesGroup();
+    extensions_group.set_title(_("Extensions installées"));
+    extensions_group.set_description(_("Activez ou désactivez les extensions détectées par IntaText"));
 
-    extensions_page.add(placeholder_group);
+    extensions_page.add(extensions_group);
+
+    foreach (var plugin_id in plugin_manager.get_plugin_ids()) {
+        add_or_update_plugin_row(plugin_id);
+    }
+
+    if (plugin_switches.size == 0) {
+        add_extensions_placeholder();
+    }
+
     add(extensions_page);
+}
+
+private void add_extensions_placeholder() {
+    if (extensions_group == null || extensions_placeholder_row != null) {
+        return;
+    }
+
+    var placeholder_row = new Adw.ActionRow();
+    placeholder_row.set_title(_("Aucune extension détectée"));
+    placeholder_row.set_subtitle(_("Copiez vos plugins compilés dans ~/.local/share/intatext/plugins"));
+    placeholder_row.set_sensitive(false);
+
+    extensions_group.add(placeholder_row);
+    extensions_placeholder_row = placeholder_row;
+}
+
+private void add_or_update_plugin_row(string plugin_id) {
+    if (extensions_group == null) {
+        return;
+    }
+
+    var plugin_info = plugin_manager.get_plugin_info(plugin_id);
+    if (plugin_info == null) {
+        return;
+    }
+
+    if (extensions_placeholder_row != null) {
+        extensions_placeholder_row.unparent();
+        extensions_placeholder_row = null;
+    }
+
+    var metadata = plugin_info.plugin.metadata;
+
+    Adw.ActionRow row;
+    Gtk.Switch toggle;
+
+    if (plugin_rows.has_key(plugin_id)) {
+        row = plugin_rows.get(plugin_id);
+        toggle = plugin_switches.get(plugin_id);
+    } else {
+        row = new Adw.ActionRow();
+        toggle = new Gtk.Switch();
+        toggle.set_valign(Gtk.Align.CENTER);
+        row.add_suffix(toggle);
+        row.set_activatable_widget(toggle);
+
+        extensions_group.add(row);
+        plugin_rows.set(plugin_id, row);
+        plugin_switches.set(plugin_id, toggle);
+
+        toggle.notify["active"].connect(() => {
+            if (updating_extension_switch) {
+                return;
+            }
+
+            bool new_state = toggle.get_active();
+            if (!apply_plugin_state(plugin_id, new_state)) {
+                updating_extension_switch = true;
+                toggle.set_active(!new_state);
+                updating_extension_switch = false;
+            }
+        });
+    }
+
+    row.set_title(metadata.name.length > 0 ? metadata.name : plugin_id);
+    row.set_subtitle(build_plugin_subtitle(metadata, plugin_info.state));
+
+    bool is_active = plugin_info.state == PluginState.ACTIVE;
+    updating_extension_switch = true;
+    toggle.set_active(is_active);
+    updating_extension_switch = false;
+}
+
+private string build_plugin_subtitle(PluginMetadata metadata, PluginState state) {
+    var parts = new ArrayList<string>();
+    parts.add(_("Version %s").printf(metadata.version));
+
+    if (metadata.description.length > 0) {
+        parts.add(metadata.description);
+    }
+
+    parts.add(state == PluginState.ACTIVE ? _("Actif") : _("Inactif"));
+
+    return string.joinv(" • ", parts.to_array());
+}
+
+private bool apply_plugin_state(string plugin_id, bool enable) {
+    var plugin_info = plugin_manager.get_plugin_info(plugin_id);
+    if (plugin_info == null) {
+        return false;
+    }
+
+    var metadata = plugin_info.plugin.metadata;
+
+    if (enable) {
+        plugin_config_manager.enable_plugin(plugin_id);
+
+        if (plugin_info.state != PluginState.ACTIVE) {
+            if (!plugin_manager.activate_plugin(plugin_id)) {
+                plugin_config_manager.disable_plugin(plugin_id);
+                show_toast_error(_("Impossible d'activer l'extension \"%s\".").printf(metadata.name));
+                return false;
+            }
+
+            show_toast_success(_("Extension \"%s\" activée").printf(metadata.name));
+        }
+    } else {
+        plugin_config_manager.disable_plugin(plugin_id);
+
+        if (plugin_info.state == PluginState.ACTIVE) {
+            if (!plugin_manager.deactivate_plugin(plugin_id)) {
+                plugin_config_manager.enable_plugin(plugin_id);
+                show_toast_error(_("Impossible de désactiver l'extension \"%s\".").printf(metadata.name));
+                return false;
+            }
+
+            show_toast_success(_("Extension \"%s\" désactivée").printf(metadata.name));
+        }
+    }
+
+    update_plugin_row_state(plugin_id);
+    return true;
+}
+
+private void sync_plugin_switch(string plugin_id, bool active) {
+    if (!plugin_switches.has_key(plugin_id)) {
+        return;
+    }
+
+    updating_extension_switch = true;
+    plugin_switches.get(plugin_id).set_active(active);
+    updating_extension_switch = false;
+
+    update_plugin_row_state(plugin_id);
+}
+
+private void update_plugin_row_state(string plugin_id) {
+    if (!plugin_rows.has_key(plugin_id)) {
+        return;
+    }
+
+    var plugin_info = plugin_manager.get_plugin_info(plugin_id);
+    if (plugin_info == null) {
+        return;
+    }
+
+    var row = plugin_rows.get(plugin_id);
+    row.set_subtitle(build_plugin_subtitle(plugin_info.plugin.metadata, plugin_info.state));
 }
 
 /**
@@ -677,6 +880,24 @@ private Adw.PreferencesPage create_interface_page() {
 
     // Autres options...
     return page;
+}
+
+private void show_toast_success(string message) {
+    var toast = new Adw.Toast(message);
+    toast.set_timeout(2);
+    var toast_overlay = get_ancestor(typeof(Adw.ToastOverlay)) as Adw.ToastOverlay;
+    if (toast_overlay != null) {
+        toast_overlay.add_toast(toast);
+    }
+}
+
+private void show_toast_error(string message) {
+    var toast = new Adw.Toast(message);
+    toast.set_timeout(4);
+    var toast_overlay = get_ancestor(typeof(Adw.ToastOverlay)) as Adw.ToastOverlay;
+    if (toast_overlay != null) {
+        toast_overlay.add_toast(toast);
+    }
 }
 }
 }
